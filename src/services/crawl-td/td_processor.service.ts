@@ -140,11 +140,13 @@ export default class CrawlTrustDepositService extends BullableService {
         const currentLastHeight = lastHeight
         const queryTimeoutMs = getDbQueryTimeoutMs()
         try {
+          const [txCheckpoint] = await BlockCheckpoint.getCheckpoint(BULL_JOB_NAME.HANDLE_TRANSACTION, [])
           nextBlocks = await queryWithAutoRetry(
             async () => {
               const result = await knex('block')
                 .select('height', knex.raw("data->'block_result' as block_result"))
                 .where('height', '>', currentLastHeight)
+                .where('height', '<=', txCheckpoint)
                 .orderBy('height', 'asc')
                 .limit(maxBlockBatch)
                 .timeout(queryTimeoutMs)
@@ -169,29 +171,32 @@ export default class CrawlTrustDepositService extends BullableService {
         const processDelay = applySpeedToDelay(baseProcessDelay, !this._isFreshStart)
 
         try {
-          for (const block of nextBlocks) {
-            if (!indexerStatusManager.isCrawlingActive()) {
-              this.logger.warn('[CrawlTrustDepositService] Crawling paused mid-batch, exiting cycle')
-              break
-            }
-            await this.processBlockEventsInternal(block)
+          let processedHeight = lastHeight
+          try {
+            for (const block of nextBlocks) {
+              if (!indexerStatusManager.isCrawlingActive()) {
+                this.logger.warn('[CrawlTrustDepositService] Crawling paused mid-batch, exiting cycle')
+                break
+              }
+              await this.processBlockEventsInternal(block)
+              processedHeight = block.height
 
-            if (this._isFreshStart) {
-              await delay(processDelay)
+              if (this._isFreshStart) {
+                await delay(processDelay)
+              }
+            }
+          } finally {
+            if (processedHeight > lastHeight) {
+              await this.updateCheckpoint(jobName, processedHeight, blockCheckpointRow)
+              lastHeight = processedHeight
+              this.logger.info(
+                `[CrawlTrustDepositService] Processed blocks up to height ${processedHeight}, checkpoint updated`
+              )
             }
           }
 
           if (!indexerStatusManager.isCrawlingActive()) {
             break
-          }
-
-          const newHeight = nextBlocks[nextBlocks.length - 1].height
-          if (newHeight > lastHeight) {
-            await this.updateCheckpoint(jobName, newHeight, blockCheckpointRow)
-            lastHeight = newHeight
-            this.logger.info(
-              `[CrawlTrustDepositService] Processed blocks up to height ${newHeight}, checkpoint updated`
-            )
           }
 
           if (nextBlocks.length < maxBlockBatch) break
@@ -320,18 +325,14 @@ export default class CrawlTrustDepositService extends BullableService {
     }
 
     for (const depositId of toProcess) {
-      try {
-        const ledgerState = await fetchTrustDeposit(depositId, height)
-        if (!ledgerState) continue
-        const eventType = depositIdToEventType.get(depositId) ?? 'SYNC_LEDGER'
-        await this.broker.call(`${SERVICE.V1.TrustDepositDatabaseService.path}.syncFromLedger`, {
-          ledgerTrustDeposit: ledgerState,
-          blockHeight: height,
-          eventType,
-        })
-      } catch (err) {
-        this.logger.warn(`[TD Height Sync] Sync failed for ${depositId} at height ${height}:`, err)
-      }
+      const ledgerState = await fetchTrustDeposit(depositId, height)
+      if (!ledgerState) throw new Error(`[TD Height Sync] No ledger state for deposit ${depositId} at height ${height}`)
+      const eventType = depositIdToEventType.get(depositId) ?? 'SYNC_LEDGER'
+      await this.broker.call(`${SERVICE.V1.TrustDepositDatabaseService.path}.syncFromLedger`, {
+        ledgerTrustDeposit: ledgerState,
+        blockHeight: height,
+        eventType,
+      })
     }
   }
 
