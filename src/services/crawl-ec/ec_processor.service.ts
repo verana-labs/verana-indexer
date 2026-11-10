@@ -9,7 +9,6 @@ import {
   extractIncreaseGfActiveEvent,
   matchAddGfDocumentEvent,
 } from '../../common/utils/gf_events'
-import { isAbciNotFound } from '../../common/utils/grpc_query'
 import { finalizeEcosystemHistoryInsert } from '../../common/utils/installed_table_columns'
 import { MessageProcessorBase } from '../../common/utils/message_processor_base'
 import { detectStartMode } from '../../common/utils/start_mode_detector'
@@ -609,57 +608,32 @@ export default class EcosystemMessageProcessorService extends BullableService {
       )
     }
 
-    let actualEcosystemId: number | null = null
-    try {
-      const ledgerResponse = await getEcosystem(ecosystemId, blockHeight)
-      if (!ledgerResponse?.ecosystem) {
-        this.logger.warn(`[EC Height-Sync] Ledger returned no ecosystem for id=${ecosystemId} at height=${blockHeight}`)
-        return null
-      }
-
-      const ledgerTr = ledgerResponse.ecosystem
-      const extractedEcosystemId = Number(ledgerTr.id ?? ledgerTr.ecosystem_id ?? ecosystemId)
-      if (Number.isInteger(extractedEcosystemId) && extractedEcosystemId > 0) {
-        actualEcosystemId = extractedEcosystemId
-      } else {
-        actualEcosystemId = ecosystemId
-      }
-
-      const syncResult: any = await this.broker.call(`${SERVICE.V1.EcosystemDatabaseService.path}.syncFromLedger`, {
-        ledgerResponse: { ecosystem: ledgerResponse.ecosystem },
-        blockHeight,
-      })
-
-      if (!syncResult || syncResult.success !== true) {
-        throw new Error(
-          `[EC Height-Sync] syncFromLedger reported failure for id=${actualEcosystemId} at height=${blockHeight}: ${JSON.stringify(syncResult)}`
-        )
-      }
-
-      if (!actualEcosystemId) {
-        actualEcosystemId = ecosystemId
-      }
-    } catch (err: any) {
-      if (!isAbciNotFound(err)) throw err
-      this.logger.warn(`[EC Height-Sync] Ledger has no ecosystem id=${ecosystemId} at height=${blockHeight}`)
-      return null
+    const ledgerResponse = await getEcosystem(ecosystemId, blockHeight)
+    if (!ledgerResponse?.ecosystem) {
+      throw new Error(`[EC Height-Sync] Ledger returned no ecosystem for id=${ecosystemId} at height=${blockHeight}`)
     }
 
-    let newTr: any | null = null
-    if (actualEcosystemId != null) {
-      try {
-        newTr = await knex('ecosystem').where({ id: actualEcosystemId }).first()
-      } catch (err: any) {
-        this.logger.warn(
-          `[EC Height-Sync] Failed to load updated EC row for id=${actualEcosystemId}: ${err?.message || String(err)}`
-        )
-      }
+    const ledgerTr = ledgerResponse.ecosystem
+    const extractedEcosystemId = Number(ledgerTr.id ?? ledgerTr.ecosystem_id ?? ecosystemId)
+    const actualEcosystemId =
+      Number.isInteger(extractedEcosystemId) && extractedEcosystemId > 0 ? extractedEcosystemId : ecosystemId
+
+    const syncResult: any = await this.broker.call(`${SERVICE.V1.EcosystemDatabaseService.path}.syncFromLedger`, {
+      ledgerResponse: { ecosystem: ledgerResponse.ecosystem },
+      blockHeight,
+    })
+
+    if (!syncResult || syncResult.success !== true) {
+      throw new Error(
+        `[EC Height-Sync] syncFromLedger reported failure for id=${actualEcosystemId} at height=${blockHeight}: ${JSON.stringify(syncResult)}`
+      )
     }
+
+    const newTr = await knex('ecosystem').where({ id: actualEcosystemId }).first()
     if (!newTr) {
-      this.logger.warn(
+      throw new Error(
         `[EC Height-Sync] No persisted EC row found after sync for id=${actualEcosystemId} at height=${blockHeight}`
       )
-      return null
     }
     return actualEcosystemId
   }
