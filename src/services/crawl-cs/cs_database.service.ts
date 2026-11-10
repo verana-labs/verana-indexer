@@ -1223,7 +1223,6 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       }
       if (typeof schema.title === 'string') payload.title = schema.title
       if (typeof schema.description === 'string') payload.description = schema.description
-      const existing = await knex('credential_schemas').where({ id }).first()
       const payloadAligned = await alignCredentialSchemaRowToInstalledColumns(
         knex,
         'credential_schemas',
@@ -1235,162 +1234,167 @@ export default class CredentialSchemaDatabaseService extends BullableService {
       if (updates.json_schema != null) {
         ;(updates as Record<string, unknown>).json_schema = overrideSchemaIdInString(String(updates.json_schema), id)
       }
-      let finalRecord: Record<string, unknown>
-      let historyChangesForUpdate: Record<string, unknown> = {}
-      if (existing) {
-        const previousIsActive = Boolean((existing as Record<string, unknown>).is_active)
-        const changedUpdates = buildChangedFields(existing as Record<string, unknown>, updates)
-        historyChangesForUpdate = { ...changedUpdates }
-        if (Object.keys(changedUpdates).length === 0) {
-          finalRecord = existing as Record<string, unknown>
-        } else {
-          const [updated] = await knex('credential_schemas').where({ id }).update(changedUpdates).returning('*')
-          if (!updated) {
-            return ApiResponder.error(ctx, 'Update failed', 500)
+      const syncedRecord = await knex.transaction(async (trx) => {
+        const existing = await trx('credential_schemas').where({ id }).first()
+        let finalRecord: Record<string, unknown>
+        let historyChangesForUpdate: Record<string, unknown> = {}
+        if (existing) {
+          const previousIsActive = Boolean((existing as Record<string, unknown>).is_active)
+          const changedUpdates = buildChangedFields(existing as Record<string, unknown>, updates)
+          historyChangesForUpdate = { ...changedUpdates }
+          if (Object.keys(changedUpdates).length === 0) {
+            finalRecord = existing as Record<string, unknown>
+          } else {
+            const [updated] = await trx('credential_schemas').where({ id }).update(changedUpdates).returning('*')
+            if (!updated) {
+              throw new Error(`Update failed for credential schema ${id}`)
+            }
+            finalRecord = updated as Record<string, unknown>
+            const nextIsActive = Boolean(finalRecord.is_active)
+            if (previousIsActive !== nextIsActive) {
+              this.logger.info(
+                `[CS] syncFromLedger activation transition schema id=${id} at height=${blockHeightNum}: ${previousIsActive} -> ${nextIsActive} (archived=${String(finalRecord.archived ?? 'null')})`
+              )
+            }
           }
-          finalRecord = updated as Record<string, unknown>
-          const nextIsActive = Boolean(finalRecord.is_active)
-          if (previousIsActive !== nextIsActive) {
-            this.logger.info(
-              `[CS] syncFromLedger activation transition schema id=${id} at height=${blockHeightNum}: ${previousIsActive} -> ${nextIsActive} (archived=${String(finalRecord.archived ?? 'null')})`
+        } else {
+          const insertPayload = { ...payloadForDb }
+          ;(insertPayload as Record<string, unknown>).json_schema =
+            (insertPayload as Record<string, unknown>).json_schema ?? '{}'
+          await ensureDepositDefaultIfColumnExists(
+            knex,
+            'credential_schemas',
+            insertPayload as Record<string, unknown>,
+            (schema as Record<string, unknown>).deposit
+          )
+          const [inserted] = await trx('credential_schemas').insert(insertPayload).returning('*')
+          if (!inserted) {
+            throw new Error(`Insert failed for credential schema ${id}`)
+          }
+          finalRecord = inserted as Record<string, unknown>
+          const rawStr = String(finalRecord.json_schema ?? '{}')
+          if (rawStr && finalRecord.id != null) {
+            const withOverride = overrideSchemaIdInString(rawStr, Number(finalRecord.id))
+            const [updated] = await trx('credential_schemas')
+              .where({ id: finalRecord.id })
+              .update({ json_schema: withOverride })
+              .returning('*')
+            if (updated) finalRecord = updated as Record<string, unknown>
+          }
+        }
+        try {
+          const { title: titleFromSchema, description: descriptionFromSchema } = extractTitleDescriptionFromJsonSchema(
+            finalRecord.json_schema
+          )
+          const metaUpdates: Record<string, string> = {}
+          if (titleFromSchema !== null) metaUpdates.title = titleFromSchema
+          if (descriptionFromSchema !== null) metaUpdates.description = descriptionFromSchema
+          if (Object.keys(metaUpdates).length > 0) {
+            const metaDiffs = buildChangedFields(finalRecord, metaUpdates)
+            if (existing) Object.assign(historyChangesForUpdate, metaDiffs)
+            if (Object.keys(metaDiffs).length === 0) {
+              // Skip no-op metadata write.
+            } else {
+              const [updatedWithMeta] = await trx.transaction((savepoint) =>
+                savepoint('credential_schemas').where({ id: finalRecord.id }).update(metaDiffs).returning('*')
+              )
+              if (updatedWithMeta) finalRecord = updatedWithMeta as Record<string, unknown>
+            }
+          }
+        } catch (err: any) {
+          this.logger.warn(
+            `Failed to persist title/description for CS ${finalRecord.id} in syncFromLedger: ${err?.message || err}`
+          )
+        }
+        const hasHeightColumn = await checkHeightColumnExists()
+        const historyAction = existing ? 'update' : 'create'
+        if (!existing || Object.keys(historyChangesForUpdate).length > 0) {
+          let stats: any
+          try {
+            stats = await calculateCredentialSchemaStats(id, blockHeightNum)
+          } catch (statsError: any) {
+            this.logger.warn(
+              `Failed to calculate stats for CS ${id} at height ${blockHeightNum} in syncFromLedger: ${statsError?.message || String(statsError)}`
+            )
+            stats = {
+              participants: 0,
+              participants_ecosystem: 0,
+              participants_issuer_grantor: 0,
+              participants_issuer: 0,
+              participants_verifier_grantor: 0,
+              participants_verifier: 0,
+              participants_holder: 0,
+              weight: 0,
+              issued: 0,
+              verified: 0,
+              ecosystem_slash_events: 0,
+              ecosystem_slashed_amount: 0,
+              ecosystem_slashed_amount_repaid: 0,
+              network_slash_events: 0,
+              network_slashed_amount: 0,
+              network_slashed_amount_repaid: 0,
+            }
+          }
+
+          const creationChanges: Record<string, unknown> = {}
+          for (const [key, value] of Object.entries(finalRecord)) {
+            if (value !== null && value !== undefined && key !== 'id' && key !== 'is_active') {
+              creationChanges[key] = value
+            }
+          }
+          const changesForHistory = existing ? historyChangesForUpdate : creationChanges
+          const historyRow = mapToHistoryRow(
+            finalRecord as any,
+            {
+              changes: Object.keys(changesForHistory).length > 0 ? JSON.stringify(changesForHistory) : null,
+              action: historyAction,
+              height: blockHeightNum,
+            },
+            hasHeightColumn
+          )
+
+          if (stats) {
+            addStatsToHistoryRow(historyRow, stats)
+          }
+
+          const historyRowForDb = await prepareCredentialSchemaHistoryRowForInsert(
+            trx,
+            historyRow as Record<string, unknown>
+          )
+          await trx('credential_schema_history').insert(historyRowForDb)
+
+          try {
+            await trx.transaction((savepoint) =>
+              savepoint('credential_schemas')
+                .where('id', id)
+                .update({
+                  participants: stats.participants,
+                  participants_ecosystem: stats.participants_ecosystem,
+                  participants_issuer_grantor: stats.participants_issuer_grantor,
+                  participants_issuer: stats.participants_issuer,
+                  participants_verifier_grantor: stats.participants_verifier_grantor,
+                  participants_verifier: stats.participants_verifier,
+                  participants_holder: stats.participants_holder,
+                  weight: String(stats.weight ?? '0'),
+                  issued: Number(stats.issued ?? 0),
+                  verified: Number(stats.verified ?? 0),
+                  ecosystem_slash_events: stats.ecosystem_slash_events,
+                  ecosystem_slashed_amount: String(stats.ecosystem_slashed_amount ?? '0'),
+                  ecosystem_slashed_amount_repaid: String(stats.ecosystem_slashed_amount_repaid ?? '0'),
+                  network_slash_events: stats.network_slash_events,
+                  network_slashed_amount: String(stats.network_slashed_amount ?? '0'),
+                  network_slashed_amount_repaid: String(stats.network_slashed_amount_repaid ?? '0'),
+                })
+            )
+          } catch (statsUpdateError: any) {
+            this.logger.warn(
+              `Failed to update stats for CS ${id} in syncFromLedger: ${statsUpdateError?.message || String(statsUpdateError)}`
             )
           }
         }
-      } else {
-        const insertPayload = { ...payloadForDb }
-        ;(insertPayload as Record<string, unknown>).json_schema =
-          (insertPayload as Record<string, unknown>).json_schema ?? '{}'
-        await ensureDepositDefaultIfColumnExists(
-          knex,
-          'credential_schemas',
-          insertPayload as Record<string, unknown>,
-          (schema as Record<string, unknown>).deposit
-        )
-        const [inserted] = await knex('credential_schemas').insert(insertPayload).returning('*')
-        if (!inserted) {
-          return ApiResponder.error(ctx, 'Insert failed', 500)
-        }
-        finalRecord = inserted as Record<string, unknown>
-        const rawStr = String(finalRecord.json_schema ?? '{}')
-        if (rawStr && finalRecord.id != null) {
-          const withOverride = overrideSchemaIdInString(rawStr, Number(finalRecord.id))
-          const [updated] = await knex('credential_schemas')
-            .where({ id: finalRecord.id })
-            .update({ json_schema: withOverride })
-            .returning('*')
-          if (updated) finalRecord = updated as Record<string, unknown>
-        }
-      }
-      try {
-        const { title: titleFromSchema, description: descriptionFromSchema } = extractTitleDescriptionFromJsonSchema(
-          finalRecord.json_schema
-        )
-        const metaUpdates: Record<string, string> = {}
-        if (titleFromSchema !== null) metaUpdates.title = titleFromSchema
-        if (descriptionFromSchema !== null) metaUpdates.description = descriptionFromSchema
-        if (Object.keys(metaUpdates).length > 0) {
-          const metaDiffs = buildChangedFields(finalRecord, metaUpdates)
-          if (existing) Object.assign(historyChangesForUpdate, metaDiffs)
-          if (Object.keys(metaDiffs).length === 0) {
-            // Skip no-op metadata write.
-          } else {
-            const [updatedWithMeta] = await knex('credential_schemas')
-              .where({ id: finalRecord.id })
-              .update(metaDiffs)
-              .returning('*')
-            if (updatedWithMeta) finalRecord = updatedWithMeta as Record<string, unknown>
-          }
-        }
-      } catch (err: any) {
-        this.logger.warn(
-          `Failed to persist title/description for CS ${finalRecord.id} in syncFromLedger: ${err?.message || err}`
-        )
-      }
-      const hasHeightColumn = await checkHeightColumnExists()
-      const historyAction = existing ? 'update' : 'create'
-      if (!existing || Object.keys(historyChangesForUpdate).length > 0) {
-        let stats: any
-        try {
-          stats = await calculateCredentialSchemaStats(id, blockHeightNum)
-        } catch (statsError: any) {
-          this.logger.warn(
-            `Failed to calculate stats for CS ${id} at height ${blockHeightNum} in syncFromLedger: ${statsError?.message || String(statsError)}`
-          )
-          stats = {
-            participants: 0,
-            participants_ecosystem: 0,
-            participants_issuer_grantor: 0,
-            participants_issuer: 0,
-            participants_verifier_grantor: 0,
-            participants_verifier: 0,
-            participants_holder: 0,
-            weight: 0,
-            issued: 0,
-            verified: 0,
-            ecosystem_slash_events: 0,
-            ecosystem_slashed_amount: 0,
-            ecosystem_slashed_amount_repaid: 0,
-            network_slash_events: 0,
-            network_slashed_amount: 0,
-            network_slashed_amount_repaid: 0,
-          }
-        }
-
-        const creationChanges: Record<string, unknown> = {}
-        for (const [key, value] of Object.entries(finalRecord)) {
-          if (value !== null && value !== undefined && key !== 'id' && key !== 'is_active') {
-            creationChanges[key] = value
-          }
-        }
-        const changesForHistory = existing ? historyChangesForUpdate : creationChanges
-        const historyRow = mapToHistoryRow(
-          finalRecord as any,
-          {
-            changes: Object.keys(changesForHistory).length > 0 ? JSON.stringify(changesForHistory) : null,
-            action: historyAction,
-            height: blockHeightNum,
-          },
-          hasHeightColumn
-        )
-
-        if (stats) {
-          addStatsToHistoryRow(historyRow, stats)
-        }
-
-        const historyRowForDb = await prepareCredentialSchemaHistoryRowForInsert(
-          knex,
-          historyRow as Record<string, unknown>
-        )
-        await knex('credential_schema_history').insert(historyRowForDb)
-
-        try {
-          await knex('credential_schemas')
-            .where('id', id)
-            .update({
-              participants: stats.participants,
-              participants_ecosystem: stats.participants_ecosystem,
-              participants_issuer_grantor: stats.participants_issuer_grantor,
-              participants_issuer: stats.participants_issuer,
-              participants_verifier_grantor: stats.participants_verifier_grantor,
-              participants_verifier: stats.participants_verifier,
-              participants_holder: stats.participants_holder,
-              weight: String(stats.weight ?? '0'),
-              issued: Number(stats.issued ?? 0),
-              verified: Number(stats.verified ?? 0),
-              ecosystem_slash_events: stats.ecosystem_slash_events,
-              ecosystem_slashed_amount: String(stats.ecosystem_slashed_amount ?? '0'),
-              ecosystem_slashed_amount_repaid: String(stats.ecosystem_slashed_amount_repaid ?? '0'),
-              network_slash_events: stats.network_slash_events,
-              network_slashed_amount: String(stats.network_slashed_amount ?? '0'),
-              network_slashed_amount_repaid: String(stats.network_slashed_amount_repaid ?? '0'),
-            })
-        } catch (statsUpdateError: any) {
-          this.logger.warn(
-            `Failed to update stats for CS ${id} in syncFromLedger: ${statsUpdateError?.message || String(statsUpdateError)}`
-          )
-        }
-      }
-      return ApiResponder.success(ctx, { success: true, result: finalRecord }, 200)
+        return finalRecord
+      })
+      return ApiResponder.success(ctx, { success: true, result: syncedRecord }, 200)
     } catch (err: any) {
       this.logger.error('Error in CredentialSchema syncFromLedger:', err)
       return ApiResponder.error(ctx, 'Internal Server Error', 500)
