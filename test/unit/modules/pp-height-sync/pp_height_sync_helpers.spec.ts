@@ -37,6 +37,16 @@ describe('participant ledger reads', () => {
     await expect(fetchParticipantSession('s-1', 500)).resolves.toBeNull()
   })
 
+  it('return null for a participant the node reports as an internal not-found', async () => {
+    mockAbci.mockRejectedValue(
+      new Error(
+        "Query failed with (6): rpc error: code = Internal desc = failed to get participant: collections: not found: key '1' of type github.com/cosmos/gogoproto/verana.pp.v1.Participant: unknown request"
+      )
+    )
+
+    await expect(fetchParticipant(1, 53043)).resolves.toBeNull()
+  })
+
   it('throw when the query fails', async () => {
     mockAbci.mockRejectedValue(futureHeight)
 

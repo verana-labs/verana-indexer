@@ -102,8 +102,15 @@ describe('withAbciQueryClient', () => {
 })
 
 describe('isAbciNotFound', () => {
-  it('matches the gRPC NotFound status only', () => {
+  it('matches an absent record only', () => {
     expect(isAbciNotFound(NOT_FOUND)).toBe(true)
+    expect(
+      isAbciNotFound(
+        new Error(
+          "Query failed with (6): rpc error: code = Internal desc = failed to get participant: collections: not found: key '1' of type github.com/cosmos/gogoproto/verana.pp.v1.Participant: unknown request"
+        )
+      )
+    ).toBe(true)
     expect(isAbciNotFound(FUTURE_HEIGHT)).toBe(false)
     expect(isAbciNotFound(new Error('getaddrinfo ENOTFOUND rpc.testnet.verana.network'))).toBe(false)
   })
