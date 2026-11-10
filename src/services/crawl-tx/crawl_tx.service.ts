@@ -1193,7 +1193,12 @@ export default class CrawlTxService extends BullableService {
       .map((msg: any) => {
         const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id)
         const txEvents = this._decodeEventAttributes(parentTx?.data?.tx_response?.events)
-        const eventEcosystemIds = extractEcosystemIdsFromEvents(txEvents)
+        const eventEcosystemIds = extractEcosystemIdsFromEvents(
+          txEvents.filter((event: any) => {
+            const msgIndex = event?.attributes?.find((attr: any) => attr?.key === 'msg_index')?.value
+            return msgIndex === undefined || Number(msgIndex) === Number(msg.index)
+          })
+        )
         return {
           type: msg.type,
           content: msg.content ?? null,
