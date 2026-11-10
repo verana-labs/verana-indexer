@@ -48,6 +48,15 @@ import { indexerStatusManager } from '../manager/indexer_status.manager'
 
 const TX_BOUNDARY_TIMEOUT_MS = getDbQueryTimeoutMs(300000)
 
+type TxEventWithAttributes = { attributes?: Array<{ key?: string; value?: string }> }
+
+function eventsOfMessage<T extends TxEventWithAttributes>(events: T[], msgIndex: unknown): T[] {
+  return events.filter((event) => {
+    const eventMsgIndex = event?.attributes?.find((attr) => attr?.key === 'msg_index')?.value
+    return eventMsgIndex === undefined || Number(eventMsgIndex) === Number(msgIndex)
+  })
+}
+
 @Service({
   name: SERVICE.V1.CrawlTransaction.key,
   version: 1,
@@ -1192,13 +1201,8 @@ export default class CrawlTxService extends BullableService {
       )
       .map((msg: any) => {
         const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id)
-        const txEvents = this._decodeEventAttributes(parentTx?.data?.tx_response?.events)
-        const eventEcosystemIds = extractEcosystemIdsFromEvents(
-          txEvents.filter((event: any) => {
-            const msgIndex = event?.attributes?.find((attr: any) => attr?.key === 'msg_index')?.value
-            return msgIndex === undefined || Number(msgIndex) === Number(msg.index)
-          })
-        )
+        const txEvents = eventsOfMessage(this._decodeEventAttributes(parentTx?.data?.tx_response?.events), msg.index)
+        const eventEcosystemIds = extractEcosystemIdsFromEvents(txEvents)
         return {
           type: msg.type,
           content: msg.content ?? null,
@@ -1222,7 +1226,7 @@ export default class CrawlTxService extends BullableService {
           height: Number(parentTx?.data?.tx_response?.height ?? parentTx?.height ?? 0),
           id: msg?.tx_id ?? null,
           txHash: parentTx?.hash ?? parentTx?.data?.tx_response?.txhash ?? null,
-          txEvents: this._decodeEventAttributes(parentTx?.data?.tx_response?.events),
+          txEvents: eventsOfMessage(this._decodeEventAttributes(parentTx?.data?.tx_response?.events), msg.index),
         }
       })
 
