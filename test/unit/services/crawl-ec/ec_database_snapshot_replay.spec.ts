@@ -40,9 +40,14 @@ describe('EcosystemDatabaseService.syncFromLedger snapshot replay', () => {
 
   beforeAll(async () => {
     process.env.USE_HEIGHT_SYNC_TR = 'true'
-    for (const table of ['ecosystem_snapshot_diff', 'ecosystem_snapshot']) {
-      await knex(table).where({ ecosystem_id: ECO }).del()
+    for (const table of ['ecosystem_snapshot_diff', 'ecosystem_snapshot', 'ecosystem_history']) {
+      await knex(table)
+        .whereIn('ecosystem_id', [ECO, ECO + 1])
+        .del()
     }
+    await knex('ecosystem')
+      .whereIn('id', [ECO, ECO + 1])
+      .del()
   })
 
   afterAll(async () => {
@@ -70,5 +75,32 @@ describe('EcosystemDatabaseService.syncFromLedger snapshot replay', () => {
     await sync()
     expect(await rowsAtHeight('ecosystem_snapshot')).toHaveLength(1)
     expect(await rowsAtHeight('ecosystem_snapshot_diff')).toHaveLength(1)
+  })
+
+  it('creates another ecosystem in a block that already wrote one', async () => {
+    const ecosystemId = ECO + 2
+    const result = await service.syncFromLedger({
+      params: {
+        ledgerResponse: {
+          ecosystem: {
+            ...ledgerEcosystem,
+            id: ecosystemId,
+            did: 'did:example:eco-same-block',
+            versions: [
+              {
+                ...ledgerEcosystem.versions[0],
+                id: 45,
+                documents: [{ ...ledgerEcosystem.versions[0].documents[0], id: 46 }],
+              },
+            ],
+          },
+        },
+        blockHeight: HEIGHT,
+      },
+      meta: {},
+    })
+
+    expect(result?.success).toBe(true)
+    expect(Number((await knex('ecosystem').where({ id: ecosystemId }).first())?.height)).toBe(HEIGHT)
   })
 })

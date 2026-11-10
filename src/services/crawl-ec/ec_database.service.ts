@@ -165,33 +165,8 @@ export default class EcosystemDatabaseService extends BaseService {
           height: blockHeightNum,
         }
 
-        // skip changing height (avoids 23505). Do NOT use try/catch — Postgres aborts the txn on error (25P02).
         if (existingTr) {
-          let payloadForUpdate = basePayload
-          if (
-            Number.isFinite(blockHeightNum) &&
-            blockHeightNum > 0 &&
-            Number(existingTr.height) !== Number(blockHeightNum)
-          ) {
-            const otherOwner = await trx('ecosystem')
-              .select('id')
-              .where('height', blockHeightNum)
-              .whereNot('id', ecosystemId)
-              .first()
-            if (otherOwner) {
-              const { height: originalHeight, ...ledgerFieldsOnly } = basePayload
-              payloadForUpdate = {
-                ...ledgerFieldsOnly,
-                height: existingTr.height ?? originalHeight,
-              }
-              this.logger.warn(
-                `[EC syncFromLedger] ecosystem_id=${ecosystemId}: cannot set height=${blockHeightNum} (legacy UNIQUE(height) ` +
-                  `held by id=${otherOwner.id}); kept height=${existingTr.height}. ` +
-                  'Consider dropping/relaxing the legacy UNIQUE(height) constraint on ecosystem via your normal migration process.'
-              )
-            }
-          }
-          await trx('ecosystem').where({ id: ecosystemId }).update(payloadForUpdate)
+          await trx('ecosystem').where({ id: ecosystemId }).update(basePayload)
         } else {
           const insertRow: Record<string, unknown> = {
             id: ecosystemId,
