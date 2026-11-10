@@ -122,7 +122,6 @@ export default class CorporationMessageProcessorService extends BullableService 
       return
     }
 
-    const failThreshold = 0.1
     const failedMessages: { message: DecodedCoMessage; error: string }[] = []
     const totalMessages = corporationList.length
 
@@ -146,10 +145,9 @@ export default class CorporationMessageProcessorService extends BullableService 
       `Corporation processing complete: ${successCount} succeeded, ${failedMessages.length} failed out of ${totalMessages}`
     )
 
-    if (failedMessages.length > totalMessages * failThreshold) {
-      const failureRate = ((failedMessages.length / totalMessages) * 100).toFixed(2)
+    if (failedMessages.length > 0) {
       throw new Error(
-        `Failed to process ${failedMessages.length}/${totalMessages} Corporation messages (${failureRate}%). Exceeds ${(failThreshold * 100).toFixed(0)}% threshold.`
+        `Failed to process ${failedMessages.length}/${totalMessages} Corporation messages: ${failedMessages[0].error}`
       )
     }
   }

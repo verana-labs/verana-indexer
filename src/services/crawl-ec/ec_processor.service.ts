@@ -118,7 +118,6 @@ export default class EcosystemMessageProcessorService extends BullableService {
       return
     }
 
-    const failThreshold = 0.1
     const failedMessages: any[] = []
     const seenEcosystemIds: number[] = []
     const syncedEcosystemIds: number[] = []
@@ -239,15 +238,7 @@ export default class EcosystemMessageProcessorService extends BullableService {
         this.logger.error(`  ${idx + 1}. Type: ${failed.message.type}, Error: ${failed.error}`)
       })
 
-      if (failedMessages.length > totalMessages * failThreshold) {
-        const failureRate = ((failedMessages.length / totalMessages) * 100).toFixed(2)
-        this.logger.error(
-          `CRITICAL: ${failureRate}% of EC messages failed (${failedMessages.length}/${totalMessages})! This indicates a serious issue.`
-        )
-        throw new Error(
-          `Failed to process ${failedMessages.length} out of ${totalMessages} Ecosystem messages (${failureRate}% failure rate). This exceeds the ${(failThreshold * 100).toFixed(0)}% threshold.`
-        )
-      }
+      throw new Error(`Failed to process ${failedMessages.length} out of ${totalMessages} Ecosystem messages`)
     }
   }
 
