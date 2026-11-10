@@ -1251,7 +1251,7 @@ export default class CrawlTxService extends BullableService {
         }
       })
 
-    const trustDepositList = resultInsertMsgs
+    const trustDepositList = successfulMsgs
       .filter((msg: any) => isTrustDepositMessageType(msg.type))
       .map((msg: any) => {
         const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id)
