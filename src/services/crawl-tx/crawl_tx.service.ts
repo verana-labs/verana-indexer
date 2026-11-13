@@ -47,6 +47,7 @@ import { readProposal } from '../api/indexer_events_query'
 import { anyTypeUrl } from '../crawl-group/group_helpers'
 import { applyScheduledParticipantFlipsForBlock } from '../crawl-pp/pp_flip_processor'
 import { indexerStatusManager } from '../manager/indexer_status.manager'
+import { loadGovProposalMessages, passedGovProposals } from './gov_params'
 import { authzInnerMessages, executedProposals } from './nested_messages'
 
 const TX_BOUNDARY_TIMEOUT_MS = getDbQueryTimeoutMs(300000)
@@ -282,6 +283,7 @@ export default class CrawlTxService extends BullableService {
       if (blockCheckpoint && crawlTxHeight > blockCheckpoint.height) {
         const previousHeight = blockCheckpoint.height
         await this.applyScheduledFlipsForRange(previousHeight + 1, crawlTxHeight)
+        await this.applyGovernanceParamChanges(previousHeight + 1, crawlTxHeight)
         blockCheckpoint.height = crawlTxHeight
         blockCheckpoint.updated_at = new Date()
         await knex.transaction(async (trx) => {
@@ -409,6 +411,7 @@ export default class CrawlTxService extends BullableService {
             }
           }
           await this.applyScheduledFlipsForBlockHeight(blockHeight, blockTxs[0]?.timestamp as Date | string | undefined)
+          await this.applyGovernanceParamChanges(heightBeforeBlock + 1, blockHeight)
           await this.broker.call(`${SERVICE.V1.IndexerEventsService.path}.persistBlockEvents`, { height: blockHeight })
 
           // Update tracking
@@ -1319,6 +1322,25 @@ export default class CrawlTxService extends BullableService {
       trustDepositList,
       updateParamsList,
       proposalExecs,
+    }
+  }
+
+  private async applyGovernanceParamChanges(fromHeight: number, toHeight: number): Promise<void> {
+    for (const { height, proposalId } of await passedGovProposals(fromHeight, toHeight)) {
+      const messages = await loadGovProposalMessages(proposalId)
+      if (!messages)
+        throw new Error(`Governance proposal ${proposalId} executed at block ${height} could not be loaded`)
+      for (const message of messages) {
+        const type = anyTypeUrl(message)
+        if (!type || !isUpdateParamsMessageType(type)) continue
+        const result = (await this.broker.call(`${SERVICE.V1.GenesisParamsService.path}.handleUpdateParams`, {
+          message: { ...Utils.camelizeKeys(message), type },
+          height,
+        })) as { success?: boolean } | undefined
+        if (!result?.success) {
+          throw new Error(`${type} from governance proposal ${proposalId} was not applied at block ${height}`)
+        }
+      }
     }
   }
 

@@ -74,6 +74,7 @@ describe('CrawlTxService stores block events before the checkpoint', () => {
     svc.logger = { info: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() }
     svc.broker = { call: jest.fn().mockResolvedValue(undefined) }
     svc.applyScheduledFlipsForRange = jest.fn().mockResolvedValue(undefined)
+    svc.applyGovernanceParamChanges = jest.fn().mockResolvedValue(undefined)
     svc.applyScheduledFlipsForBlockHeight = jest.fn().mockResolvedValue(undefined)
     svc.processTransactionsForBlock = jest.fn().mockResolvedValue({})
     svc.processPayloads = jest.fn().mockResolvedValue(undefined)
