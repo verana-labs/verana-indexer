@@ -1,6 +1,6 @@
 import { pricingAssetTypeToJSON } from '@verana-labs/verana-types/codec/verana/cs/v1/types'
 import {
-  QueryListExchangeRatesRequest,
+  QueryGetExchangeRateRequest,
   QueryClientImpl as XrQueryClientImpl,
 } from '@verana-labs/verana-types/codec/verana/xr/v1/query'
 import type { ExchangeRate as LedgerExchangeRate } from '@verana-labs/verana-types/codec/verana/xr/v1/tx'
@@ -25,10 +25,12 @@ export function serializeLedgerExchangeRate(rate: LedgerExchangeRate): ExchangeR
   }
 }
 
-export async function fetchExchangeRates(blockHeight: number | undefined): Promise<LedgerExchangeRate[]> {
-  return withAbciQueryClient(blockHeight, async (rpc) => {
+export async function fetchExchangeRate(id: number, blockHeight: number | undefined): Promise<LedgerExchangeRate> {
+  const rate = await withAbciQueryClient(blockHeight, async (rpc) => {
     const query = new XrQueryClientImpl(rpc)
-    const res = await query.ListExchangeRates(QueryListExchangeRatesRequest.fromPartial({}))
-    return res?.exchangeRates ?? []
+    const res = await query.GetExchangeRate(QueryGetExchangeRateRequest.fromPartial({ id }))
+    return res?.exchangeRate
   })
+  if (!rate) throw new Error(`exchange rate ${id} not found on the ledger at block ${blockHeight}`)
+  return rate
 }
