@@ -121,11 +121,14 @@ export default class ProcessCredentialSchemaService extends BullableService {
       }
     }
 
-    await this.processorBase.processInBatches(credentialSchemaMessages, processMessage, {
+    const { failed } = await this.processorBase.processInBatches(credentialSchemaMessages, processMessage, {
       maxConcurrent: this._isFreshStart ? 3 : 8,
       batchSize: this._isFreshStart ? 20 : 50,
       delayBetweenBatches: this._isFreshStart ? 500 : 200,
     })
+    if (failed > 0) {
+      throw new Error(`Failed to process ${failed} of ${credentialSchemaMessages.length} credential schema messages`)
+    }
 
     return { success: true }
   }
@@ -212,6 +215,7 @@ export default class ProcessCredentialSchemaService extends BullableService {
       )
     } catch (err) {
       this.logger.error('❌ Error storing credential schema:', err)
+      throw err
     }
   }
 
@@ -274,6 +278,7 @@ export default class ProcessCredentialSchemaService extends BullableService {
       this.logger.info(`✅ Updated credential schema id=${payload.id}`, result)
     } catch (err) {
       this.logger.error(`❌ Error updating credential schema id=${schemaMessage.id}:`, err)
+      throw err
     }
   }
 
@@ -299,6 +304,7 @@ export default class ProcessCredentialSchemaService extends BullableService {
       })
     } catch (err) {
       this.logger.error(`❌ Error archiving credential schema id=${schemaMessage?.id}:`, err)
+      throw err
     }
   }
 }

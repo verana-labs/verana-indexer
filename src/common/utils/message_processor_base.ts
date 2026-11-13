@@ -9,13 +9,15 @@ export interface BatchProcessorConfig {
 }
 
 export class MessageProcessorBase {
-  protected logger: any
   protected broker: ServiceBroker
   protected _isFreshStart: boolean = false
 
-  constructor(service: BullableService) {
-    this.logger = service.logger
+  constructor(private readonly service: BullableService) {
     this.broker = service.broker
+  }
+
+  protected get logger() {
+    return this.service.logger
   }
 
   setFreshStartMode(isFreshStart: boolean) {
