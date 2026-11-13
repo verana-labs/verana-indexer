@@ -397,6 +397,7 @@ export default class CrawlTxService extends BullableService {
             }
           }
           await this.applyScheduledFlipsForBlockHeight(blockHeight, blockTxs[0]?.timestamp as Date | string | undefined)
+          await this.broker.call(`${SERVICE.V1.IndexerEventsService.path}.persistBlockEvents`, { height: blockHeight })
 
           // Update tracking
           lastProcessedHeight = blockHeight

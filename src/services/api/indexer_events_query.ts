@@ -1302,16 +1302,26 @@ export async function persistIndexerEventsForBlock(blockHeight: number): Promise
     console.info(`[IndexerEvents] no DID found or no watched messages for block_height=${blockHeight}`)
   }
 
-  if (insertedIds.length === 0) return []
+  return listIndexerEventsByIds(insertedIds)
+}
 
+export async function listIndexerEventsForBlock(blockHeight: number): Promise<IndexerEventRecord[]> {
+  const rows = (await knex('indexer_events').select('id').where('block_height', blockHeight).orderBy('id')) as Array<{
+    id: number | string
+  }>
+  return listIndexerEventsByIds(rows.map((row) => Number(row.id)))
+}
+
+async function listIndexerEventsByIds(ids: number[]): Promise<IndexerEventRecord[]> {
   const results: IndexerEventRecord[] = []
   const chunkSize = 500
-  for (let i = 0; i < insertedIds.length; i += chunkSize) {
-    const chunk = insertedIds.slice(i, i + chunkSize)
-    const rows = await listIndexerEvents({ ids: chunk, limit: chunk.length })
-    results.push(...rows)
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    const chunk = ids.slice(i, i + chunkSize)
+    results.push(...(await listIndexerEvents({ ids: chunk, limit: chunk.length })))
   }
-  return results
+  return results.sort(
+    (a, b) => a.payload.tx_index - b.payload.tx_index || a.payload.message_index - b.payload.message_index
+  )
 }
 
 export async function listIndexerEvents(args: {

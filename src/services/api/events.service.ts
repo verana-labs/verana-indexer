@@ -4,7 +4,7 @@ import BaseService from '../../base/base.service'
 import { SERVICE } from '../../common'
 import knex from '../../common/utils/db_connection'
 import { parseCsvList } from './indexer_event_utils'
-import { listIndexerEvents, persistIndexerEventsForBlock } from './indexer_events_query'
+import { listIndexerEvents, listIndexerEventsForBlock, persistIndexerEventsForBlock } from './indexer_events_query'
 import { subscribeBroadcaster } from './subscribe_broadcaster'
 
 @Service({
@@ -17,6 +17,17 @@ export default class IndexerEventsService extends BaseService {
   }
 
   @Action({
+    name: 'persistBlockEvents',
+    params: {
+      height: { type: 'number', integer: true, positive: true, convert: true },
+    },
+  })
+  public async persistBlockEvents(ctx: Context<{ height: number }>) {
+    const events = await persistIndexerEventsForBlock(ctx.params.height)
+    return { height: ctx.params.height, persisted: events.length }
+  }
+
+  @Action({
     name: 'broadcastBlockIndexed',
     params: {
       height: { type: 'number', integer: true, positive: true, convert: true },
@@ -26,13 +37,7 @@ export default class IndexerEventsService extends BaseService {
   public async broadcastBlockIndexed(ctx: Context<{ height: number; timestamp?: string }>) {
     const { height, timestamp } = ctx.params
     const eventTimestamp = timestamp ? new Date(timestamp) : new Date()
-    let events: Awaited<ReturnType<typeof persistIndexerEventsForBlock>> = []
-
-    try {
-      events = await persistIndexerEventsForBlock(height)
-    } catch (error) {
-      this.logger.error('[IndexerEventsService] Error persisting indexer events:', error)
-    }
+    const events = await listIndexerEventsForBlock(height)
 
     try {
       subscribeBroadcaster.broadcastBlockEnvelope({
