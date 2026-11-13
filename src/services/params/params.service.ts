@@ -12,7 +12,10 @@ import { hasMeaningfulChanges, recordModuleParamsHistorySafe } from '../../commo
 import {
   VeranaCorporationMessageTypes,
   VeranaCredentialSchemaMessageTypes,
+  VeranaDelegationMessageTypes,
+  VeranaDiMessageTypes,
   VeranaEcosystemMessageTypes,
+  VeranaExchangeRateMessageTypes,
   VeranaGovernanceFrameworkMessageTypes,
   VeranaParticipantMessageTypes,
   VeranaTrustDepositMessageTypes,
@@ -278,35 +281,16 @@ export default class GenesisParamsService extends BullableService {
 
           for (const [module, data] of Object.entries(appState)) {
             if (data && typeof data === 'object' && 'params' in data) {
-              // Get existing params for comparison
+              // Genesis only seeds a module; later changes come from the chain and must not be reverted here.
               const existing = await trx('module_params').where({ module }).first()
-              const previousParams = existing?.params
-                ? typeof existing.params === 'string'
-                  ? JSON.parse(existing.params)
-                  : existing.params
-                : null
-
-              const newParamsData = data as any
-              const isNewOrChanged = !existing || hasMeaningfulChanges(previousParams, newParamsData)
-
-              if (isNewOrChanged) {
-                await trx('module_params')
-                  .insert({
-                    module,
-                    params: JSON.stringify(data),
-                    updated_at: trx.fn.now(),
-                  })
-                  .onConflict('module')
-                  .merge()
-
-                await recordModuleParamsHistorySafe(
-                  trx,
+              if (!existing) {
+                await trx('module_params').insert({
                   module,
-                  newParamsData,
-                  existing ? 'UPDATE_PARAMS' : 'CREATE_PARAMS',
-                  genesisHeight,
-                  previousParams
-                )
+                  params: JSON.stringify(data),
+                  updated_at: trx.fn.now(),
+                })
+
+                await recordModuleParamsHistorySafe(trx, module, data, 'CREATE_PARAMS', genesisHeight, null)
 
                 clearParamsCache(module)
                 updatedModules++
@@ -349,6 +333,12 @@ export default class GenesisParamsService extends BullableService {
       module = ModulesParamsNamesTypes.CO
     } else if (type === VeranaGovernanceFrameworkMessageTypes.UpdateParams) {
       module = ModulesParamsNamesTypes.GF
+    } else if (type === VeranaDiMessageTypes.UpdateParams) {
+      module = ModulesParamsNamesTypes.DI
+    } else if (type === VeranaDelegationMessageTypes.UpdateParams) {
+      module = ModulesParamsNamesTypes.DE
+    } else if (type === VeranaExchangeRateMessageTypes.UpdateParams) {
+      module = ModulesParamsNamesTypes.XR
     } else {
       return { success: false, message: `Unknown UpdateParams message type: ${type}` }
     }
@@ -377,11 +367,12 @@ export default class GenesisParamsService extends BullableService {
 
     try {
       const existing = await trx('module_params').where({ module }).first()
-      const previousParams = existing?.params
+      const storedParams = existing?.params
         ? typeof existing.params === 'string'
           ? JSON.parse(existing.params)
           : existing.params
         : null
+      const previousParams = storedParams?.params ?? storedParams
 
       const hasChanges = !existing || hasMeaningfulChanges(previousParams, params)
 

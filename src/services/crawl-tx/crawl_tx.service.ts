@@ -43,10 +43,23 @@ import config from '../../config.json' with { type: 'json' }
 import { Block, BlockCheckpoint, Event, Transaction, TransactionMessage } from '../../models'
 import { isPotentialCredentialSchemaEvent } from '../../modules/cs-height-sync/cs_height_sync_helpers'
 import { extractEcosystemIdsFromEvents } from '../../modules/ec-height-sync/ec_height_sync_helpers'
+import { readProposal } from '../api/indexer_events_query'
+import { anyTypeUrl } from '../crawl-group/group_helpers'
 import { applyScheduledParticipantFlipsForBlock } from '../crawl-pp/pp_flip_processor'
 import { indexerStatusManager } from '../manager/indexer_status.manager'
+import { loadGovProposalMessages, passedGovProposals } from './gov_params'
+import { authzInnerMessages, executedProposals } from './nested_messages'
 
 const TX_BOUNDARY_TIMEOUT_MS = getDbQueryTimeoutMs(300000)
+
+const PAYLOAD_MESSAGE_LISTS = [
+  'ecosystemList',
+  'corporationList',
+  'credentialSchemaMessages',
+  'participantMessages',
+  'trustDepositList',
+  'updateParamsList',
+] as const
 
 type TxEventWithAttributes = { attributes?: Array<{ key?: string; value?: string }> }
 
@@ -270,6 +283,7 @@ export default class CrawlTxService extends BullableService {
       if (blockCheckpoint && crawlTxHeight > blockCheckpoint.height) {
         const previousHeight = blockCheckpoint.height
         await this.applyScheduledFlipsForRange(previousHeight + 1, crawlTxHeight)
+        await this.applyGovernanceParamChanges(previousHeight + 1, crawlTxHeight)
         blockCheckpoint.height = crawlTxHeight
         blockCheckpoint.updated_at = new Date()
         await knex.transaction(async (trx) => {
@@ -397,6 +411,8 @@ export default class CrawlTxService extends BullableService {
             }
           }
           await this.applyScheduledFlipsForBlockHeight(blockHeight, blockTxs[0]?.timestamp as Date | string | undefined)
+          await this.applyGovernanceParamChanges(heightBeforeBlock + 1, blockHeight)
+          await this.broker.call(`${SERVICE.V1.IndexerEventsService.path}.persistBlockEvents`, { height: blockHeight })
 
           // Update tracking
           lastProcessedHeight = blockHeight
@@ -545,6 +561,7 @@ export default class CrawlTxService extends BullableService {
           updateParamsList: [],
           blockHeight,
           csEventsFromBlock: [],
+          proposalExecs: [],
         }
 
         for (let i = 0; i < blockTransactions.length; i++) {
@@ -575,6 +592,9 @@ export default class CrawlTxService extends BullableService {
             }
             if (txPayloads.trustDepositList?.length) {
               allPayloads.trustDepositList.push(...txPayloads.trustDepositList)
+            }
+            if (txPayloads.proposalExecs?.length) {
+              allPayloads.proposalExecs.push(...txPayloads.proposalExecs)
             }
             if (txPayloads.updateParamsList?.length) {
               allPayloads.updateParamsList.push(...txPayloads.updateParamsList)
@@ -1186,10 +1206,16 @@ export default class CrawlTxService extends BullableService {
   }
 
   private async processMessageTypes(resultInsertMsgs: any[], listDecodedTx: Transaction[]): Promise<any> {
-    const successfulMsgs = resultInsertMsgs.filter((msg: any) => {
+    const topLevelMsgs = resultInsertMsgs.filter((msg: any) => {
       const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id)
       return parentTx?.code === 0
     })
+    const successfulMsgs = [...topLevelMsgs, ...topLevelMsgs.flatMap((msg: any) => authzInnerMessages(msg))]
+    const proposalExecs = listDecodedTx
+      .filter((tx) => tx.code === 0)
+      .flatMap((tx) =>
+        executedProposals(this._decodeEventAttributes(tx.data?.tx_response?.events)).map((exec) => ({ ...exec, tx }))
+      )
 
     this.logger.info(
       `📋 [insertRelatedTx] Total messages: ${resultInsertMsgs.length}, Successful: ${successfulMsgs.length}`
@@ -1295,6 +1321,44 @@ export default class CrawlTxService extends BullableService {
       participantMessages,
       trustDepositList,
       updateParamsList,
+      proposalExecs,
+    }
+  }
+
+  private async applyGovernanceParamChanges(fromHeight: number, toHeight: number): Promise<void> {
+    for (const { height, proposalId } of await passedGovProposals(fromHeight, toHeight)) {
+      const messages = await loadGovProposalMessages(proposalId)
+      if (!messages)
+        throw new Error(`Governance proposal ${proposalId} executed at block ${height} could not be loaded`)
+      for (const message of messages) {
+        const type = anyTypeUrl(message)
+        if (!type || !isUpdateParamsMessageType(type)) continue
+        const result = (await this.broker.call(`${SERVICE.V1.GenesisParamsService.path}.handleUpdateParams`, {
+          message: { ...Utils.camelizeKeys(message), type },
+          height,
+        })) as { success?: boolean } | undefined
+        if (!result?.success) {
+          throw new Error(`${type} from governance proposal ${proposalId} was not applied at block ${height}`)
+        }
+      }
+    }
+  }
+
+  // Msgs a group proposal runs are not tx messages; read them from the proposal once this block's txs are committed.
+  private async addProposalMessages(payload: any): Promise<void> {
+    for (const exec of payload.proposalExecs ?? []) {
+      const proposal = await readProposal(exec.proposalId)
+      if (!proposal) {
+        throw new Error(`Proposal ${exec.proposalId} executed at block ${exec.tx.height} could not be loaded`)
+      }
+      const messages = proposal.messages.flatMap((content) => {
+        const type = anyTypeUrl(content)
+        return type ? [{ tx_id: exec.tx.id, index: exec.msgIndex, type, content }] : []
+      })
+      const executed = await this.processMessageTypes(messages, [exec.tx])
+      for (const list of PAYLOAD_MESSAGE_LISTS) {
+        payload[list] = [...(payload[list] ?? []), ...executed[list]]
+      }
     }
   }
 
@@ -1343,6 +1407,7 @@ export default class CrawlTxService extends BullableService {
         console.error(`STOPPING CRAWLING: Unknown Verana message types: ${unknownTypes.join(', ')}`)
         const error = new Error(`Unknown Verana message types: ${unknownTypes.join(', ')}`)
         await handleErrorGracefully(error, SERVICE.V1.CrawlTransaction.key, 'Unknown Verana message types', true)
+        throw error
       } else {
         this.logger.warn(`TEST MODE: Skipping validation for unknown Verana message types: ${unknownTypes.join(', ')}`)
       }
@@ -1731,6 +1796,7 @@ export default class CrawlTxService extends BullableService {
 
   private async processPayloads(payload: any, completedStages = new Set<string>()) {
     if (!payload) return
+    await this.addProposalMessages(payload)
     const runStage = async (stage: string, fn: () => Promise<unknown>) => {
       if (completedStages.has(stage)) return
       await fn()

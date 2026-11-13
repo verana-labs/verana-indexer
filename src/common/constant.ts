@@ -129,6 +129,9 @@ export enum ModulesParamsNamesTypes {
   STAKING = 'staking',
   TD = 'td',
   EC = 'ec',
+  DI = 'di',
+  DE = 'de',
+  XR = 'xr',
   TRANSFER = 'transfer',
 }
 

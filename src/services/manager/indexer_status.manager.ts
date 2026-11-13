@@ -138,7 +138,10 @@ class IndexerStatusManager {
     let lastProcessedBlock: number | undefined
     let lastBlockTime: string | undefined
     try {
-      const row = await knex('block_checkpoint').where('job_name', BULL_JOB_NAME.CRAWL_BLOCK).select('height').first()
+      const row = await knex('block_checkpoint')
+        .where('job_name', BULL_JOB_NAME.HANDLE_TRANSACTION)
+        .select('height')
+        .first()
       if (row?.height != null) lastProcessedBlock = Number(row.height)
     } catch {
       // ignore

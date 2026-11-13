@@ -22,6 +22,7 @@ import {
   parseEventAttrValue,
   shortExecutorResult,
 } from '../crawl-group/group_helpers'
+import { AUTHZ_EXEC_TYPE } from '../crawl-tx/nested_messages'
 import { applyBlockHeightFilter, toIsoSeconds } from './api_shared'
 import { fetchCorporationById, fetchParticipantDid } from './indexer_event_chain_lookup'
 import {
@@ -373,6 +374,8 @@ async function resolveEntityIdFromDomain(row: EventRow, meta: EventMeta): Promis
   const height = Number(row.block_height)
 
   if (meta.module === 'ecosystem') {
+    const createdId = await loadCreatedEntityId(row)
+    if (createdId) return createdId
     const did = normalizeDid(content.did)
     if (!did) return undefined
     const ec = await knex('ecosystem').select('id').where({ did }).first()
@@ -380,7 +383,7 @@ async function resolveEntityIdFromDomain(row: EventRow, meta: EventMeta): Promis
   }
 
   if (meta.module === 'credential-schema') {
-    const createdId = await loadCreatedCredentialSchemaId(row)
+    const createdId = await loadCreatedEntityId(row)
     if (createdId) return createdId
     const ecosystemId = readNumber(content, ID_ALIASES.ecosystem)
     const query = knex('credential_schema_history').select('credential_schema_id').where({ height })
@@ -390,6 +393,8 @@ async function resolveEntityIdFromDomain(row: EventRow, meta: EventMeta): Promis
   }
 
   if (meta.module === 'participant') {
+    const createdId = await loadCreatedEntityId(row)
+    if (createdId) return createdId
     const did = normalizeDid(content.did)
     const query = knex('participant_history').select('participant_id').where({ height })
     if (did) query.andWhere({ did })
@@ -400,21 +405,36 @@ async function resolveEntityIdFromDomain(row: EventRow, meta: EventMeta): Promis
   return undefined
 }
 
-// The Msg carries no id; the chain reports it on create_credential_schema, one event per create in Msg order.
-async function loadCreatedCredentialSchemaId(row: EventRow): Promise<string | undefined> {
-  if (row.message_type !== VeranaCredentialSchemaMessageTypes.CreateCredentialSchema) return undefined
+const CREATED_ENTITY_EVENTS: Record<string, { eventType: string; idKey: string }> = {
+  [VeranaCredentialSchemaMessageTypes.CreateCredentialSchema]: {
+    eventType: 'create_credential_schema',
+    idKey: 'credential_schema_id',
+  },
+  [VeranaEcosystemMessageTypes.CreateEcosystem]: { eventType: 'create_ecosystem', idKey: 'ecosystem_id' },
+  [VeranaParticipantMessageTypes.CreateRootParticipant]: {
+    eventType: 'create_root_participant',
+    idKey: 'root_participant_id',
+  },
+  [VeranaParticipantMessageTypes.SelfCreateParticipant]: { eventType: 'create_participant', idKey: 'participant_id' },
+  [VeranaParticipantMessageTypes.StartParticipantOP]: { eventType: 'start_participant_op', idKey: 'participant_id' },
+}
+
+// A create Msg carries no id; the chain reports it on the create event, one event per create in Msg order.
+async function loadCreatedEntityId(row: EventRow): Promise<string | undefined> {
+  const created = CREATED_ENTITY_EVENTS[row.message_type]
+  if (!created) return undefined
   const attribute = await knex('event as e')
     .innerJoin('event_attribute as ea', 'ea.event_id', 'e.id')
     .where('e.tx_id', row.tx_id)
-    .where('e.type', 'create_credential_schema')
+    .where('e.type', created.eventType)
     .whereRaw('COALESCE(e.tx_msg_index, 0) = ?', [Number(row.message_index)])
-    .where('ea.key', 'credential_schema_id')
+    .where('ea.key', created.idKey)
     .select('ea.value')
     .orderBy('e.id', 'asc')
     .offset(row.occurrence ?? 0)
     .first()
-  const schemaId = readPositiveInteger(parseEventAttrValue(attribute?.value))
-  return schemaId ? String(schemaId) : undefined
+  const entityId = readPositiveInteger(parseEventAttrValue(attribute?.value))
+  return entityId ? String(entityId) : undefined
 }
 
 function toCorporationId(value: unknown): number | undefined {
@@ -571,7 +591,7 @@ async function toIndexerEvent(row: EventRow): Promise<IndexerTxEvent | null> {
   if (meta.module === 'ecosystem') {
     const rawEcosystemId = readNumber(row.content, [...ID_ALIASES.ecosystem, 'id'])
     ecosystemId = rawEcosystemId ? String(rawEcosystemId) : entityId
-    const ecosystem = await loadEcosystem(rawEcosystemId)
+    const ecosystem = await loadEcosystem(rawEcosystemId ?? readPositiveInteger(entityId))
     if (ecosystem.did) collected.add(ecosystem.did)
     corporationId = ecosystem.corporationId
   }
@@ -1052,7 +1072,7 @@ type LoadedProposal = { policyAddress?: string; messages: Array<Record<string, u
 type ProposalCache = Map<number, Promise<LoadedProposal | undefined>>
 
 // Submit tx first: group_proposal lags this block's events; it is the fallback when the submit tx is not indexed.
-async function readProposal(proposalId: number): Promise<LoadedProposal | undefined> {
+export async function readProposal(proposalId: number): Promise<LoadedProposal | undefined> {
   const content = await loadSubmitProposalContent(proposalId)
   if (content) {
     return {
@@ -1089,6 +1109,42 @@ function loadProposal(proposalId: number, cache: ProposalCache): Promise<LoadedP
     cache.set(proposalId, proposal)
   }
   return proposal
+}
+
+// Msgs an authz MsgExec runs have no transaction_message row of their own when the block's events are built.
+async function buildAuthzExecEvents(blockHeight: number): Promise<IndexerTxEvent[]> {
+  const rows = (await knex('transaction_message as tm')
+    .innerJoin('transaction as tx', 'tx.id', 'tm.tx_id')
+    .where('tx.height', blockHeight)
+    .andWhere('tx.code', 0)
+    .where('tm.type', AUTHZ_EXEC_TYPE)
+    .whereNull('tm.parent_id')
+    .select(
+      'tm.id as message_id',
+      'tm.tx_id',
+      'tm.index as message_index',
+      'tm.sender',
+      'tm.content',
+      'tx.height as block_height',
+      'tx.hash as tx_hash',
+      'tx.index as tx_index',
+      'tx.timestamp'
+    )
+    .orderBy('tx.index', 'asc')
+    .orderBy('tm.index', 'asc')) as EventRow[]
+
+  const events: IndexerTxEvent[] = []
+  for (const row of rows) {
+    const inner = decodeProposalMessages((row.content as { msgs?: unknown } | null)?.msgs)
+    for (const [index, message] of inner.entries()) {
+      const messageType = anyTypeUrl(message)
+      if (!messageType || !EVENT_META[messageType]) continue
+      const occurrence = inner.slice(0, index).filter((earlier) => anyTypeUrl(earlier) === messageType).length
+      const event = await toIndexerEvent({ ...row, message_type: messageType, content: message, occurrence })
+      if (event) events.push(event)
+    }
+  }
+  return events
 }
 
 // Msgs a proposal executes (MsgExec, or MsgSubmitProposal/MsgVote with EXEC_TRY) never get a transaction_message row.
@@ -1274,6 +1330,8 @@ export async function persistIndexerEventsForBlock(blockHeight: number): Promise
   rows.push(...groupEvents.map(toEventRow))
   const proposalExecEvents = await buildProposalExecEvents(blockHeight, proposals)
   rows.push(...proposalExecEvents.map(toEventRow))
+  const authzExecEvents = await buildAuthzExecEvents(blockHeight)
+  rows.push(...authzExecEvents.map(toEventRow))
   let insertedIds: number[] = []
 
   if (rows.length > 0) {
@@ -1302,16 +1360,26 @@ export async function persistIndexerEventsForBlock(blockHeight: number): Promise
     console.info(`[IndexerEvents] no DID found or no watched messages for block_height=${blockHeight}`)
   }
 
-  if (insertedIds.length === 0) return []
+  return listIndexerEventsByIds(insertedIds)
+}
 
+export async function listIndexerEventsForBlock(blockHeight: number): Promise<IndexerEventRecord[]> {
+  const rows = (await knex('indexer_events').select('id').where('block_height', blockHeight).orderBy('id')) as Array<{
+    id: number | string
+  }>
+  return listIndexerEventsByIds(rows.map((row) => Number(row.id)))
+}
+
+async function listIndexerEventsByIds(ids: number[]): Promise<IndexerEventRecord[]> {
   const results: IndexerEventRecord[] = []
   const chunkSize = 500
-  for (let i = 0; i < insertedIds.length; i += chunkSize) {
-    const chunk = insertedIds.slice(i, i + chunkSize)
-    const rows = await listIndexerEvents({ ids: chunk, limit: chunk.length })
-    results.push(...rows)
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    const chunk = ids.slice(i, i + chunkSize)
+    results.push(...(await listIndexerEvents({ ids: chunk, limit: chunk.length })))
   }
-  return results
+  return results.sort(
+    (a, b) => a.payload.tx_index - b.payload.tx_index || a.payload.message_index - b.payload.message_index
+  )
 }
 
 export async function listIndexerEvents(args: {
