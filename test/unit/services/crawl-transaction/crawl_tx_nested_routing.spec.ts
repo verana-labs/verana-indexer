@@ -6,6 +6,11 @@ import {
 import { readProposal } from '../../../../src/services/api/indexer_events_query'
 import CrawlTxService from '../../../../src/services/crawl-tx/crawl_tx.service'
 
+jest.mock('../../../../src/common/utils/error_handler', () => ({
+  ...jest.requireActual('../../../../src/common/utils/error_handler'),
+  handleErrorGracefully: jest.fn().mockResolvedValue(true),
+}))
+
 jest.mock('../../../../src/services/api/indexer_events_query', () => ({
   ...jest.requireActual('../../../../src/services/api/indexer_events_query'),
   readProposal: jest.fn(),
@@ -90,6 +95,19 @@ describe('crawl_tx routing of Verana messages run through authz or a group propo
 
     expect(payload.participantMessages.map((msg: any) => msg.content.id)).toEqual(['4'])
     expect(payload.corporationList.map((msg: any) => msg.content.did)).toEqual(['did:x'])
+  })
+
+  it('fails the block on a Verana message type it does not know, also inside an authz MsgExec', async () => {
+    const message = {
+      tx_id: 1,
+      index: 0,
+      type: '/cosmos.authz.v1beta1.MsgExec',
+      content: { msgs: [{ '@type': '/verana.zz.v1.MsgSomethingNew', corporation: CORP }] },
+    }
+
+    await expect(service.processMessageTypes([message], [tx([])])).rejects.toThrow(
+      'Unknown Verana message types: /verana.zz.v1.MsgSomethingNew'
+    )
   })
 
   it('fails the block when an executed proposal cannot be loaded', async () => {

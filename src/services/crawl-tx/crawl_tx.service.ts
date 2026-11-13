@@ -1385,6 +1385,7 @@ export default class CrawlTxService extends BullableService {
         console.error(`STOPPING CRAWLING: Unknown Verana message types: ${unknownTypes.join(', ')}`)
         const error = new Error(`Unknown Verana message types: ${unknownTypes.join(', ')}`)
         await handleErrorGracefully(error, SERVICE.V1.CrawlTransaction.key, 'Unknown Verana message types', true)
+        throw error
       } else {
         this.logger.warn(`TEST MODE: Skipping validation for unknown Verana message types: ${unknownTypes.join(', ')}`)
       }
