@@ -22,6 +22,7 @@ import {
   parseEventAttrValue,
   shortExecutorResult,
 } from '../crawl-group/group_helpers'
+import { AUTHZ_EXEC_TYPE } from '../crawl-tx/nested_messages'
 import { applyBlockHeightFilter, toIsoSeconds } from './api_shared'
 import { fetchCorporationById, fetchParticipantDid } from './indexer_event_chain_lookup'
 import {
@@ -1071,7 +1072,7 @@ type LoadedProposal = { policyAddress?: string; messages: Array<Record<string, u
 type ProposalCache = Map<number, Promise<LoadedProposal | undefined>>
 
 // Submit tx first: group_proposal lags this block's events; it is the fallback when the submit tx is not indexed.
-async function readProposal(proposalId: number): Promise<LoadedProposal | undefined> {
+export async function readProposal(proposalId: number): Promise<LoadedProposal | undefined> {
   const content = await loadSubmitProposalContent(proposalId)
   if (content) {
     return {
@@ -1108,6 +1109,42 @@ function loadProposal(proposalId: number, cache: ProposalCache): Promise<LoadedP
     cache.set(proposalId, proposal)
   }
   return proposal
+}
+
+// Msgs an authz MsgExec runs have no transaction_message row of their own when the block's events are built.
+async function buildAuthzExecEvents(blockHeight: number): Promise<IndexerTxEvent[]> {
+  const rows = (await knex('transaction_message as tm')
+    .innerJoin('transaction as tx', 'tx.id', 'tm.tx_id')
+    .where('tx.height', blockHeight)
+    .andWhere('tx.code', 0)
+    .where('tm.type', AUTHZ_EXEC_TYPE)
+    .whereNull('tm.parent_id')
+    .select(
+      'tm.id as message_id',
+      'tm.tx_id',
+      'tm.index as message_index',
+      'tm.sender',
+      'tm.content',
+      'tx.height as block_height',
+      'tx.hash as tx_hash',
+      'tx.index as tx_index',
+      'tx.timestamp'
+    )
+    .orderBy('tx.index', 'asc')
+    .orderBy('tm.index', 'asc')) as EventRow[]
+
+  const events: IndexerTxEvent[] = []
+  for (const row of rows) {
+    const inner = decodeProposalMessages((row.content as { msgs?: unknown } | null)?.msgs)
+    for (const [index, message] of inner.entries()) {
+      const messageType = anyTypeUrl(message)
+      if (!messageType || !EVENT_META[messageType]) continue
+      const occurrence = inner.slice(0, index).filter((earlier) => anyTypeUrl(earlier) === messageType).length
+      const event = await toIndexerEvent({ ...row, message_type: messageType, content: message, occurrence })
+      if (event) events.push(event)
+    }
+  }
+  return events
 }
 
 // Msgs a proposal executes (MsgExec, or MsgSubmitProposal/MsgVote with EXEC_TRY) never get a transaction_message row.
@@ -1293,6 +1330,8 @@ export async function persistIndexerEventsForBlock(blockHeight: number): Promise
   rows.push(...groupEvents.map(toEventRow))
   const proposalExecEvents = await buildProposalExecEvents(blockHeight, proposals)
   rows.push(...proposalExecEvents.map(toEventRow))
+  const authzExecEvents = await buildAuthzExecEvents(blockHeight)
+  rows.push(...authzExecEvents.map(toEventRow))
   let insertedIds: number[] = []
 
   if (rows.length > 0) {

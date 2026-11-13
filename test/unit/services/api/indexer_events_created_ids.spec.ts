@@ -139,4 +139,27 @@ describe('indexer events take created entity ids from the chain event', () => {
 
     expect(records.map((record) => record.payload.entity_id)).toEqual(['501', '502'])
   })
+
+  it('emits an event for each Verana message an authz MsgExec runs', async () => {
+    const height = baseHeight + 2
+    const txId = await insertTx(height, `authz-${runId}`, [
+      {
+        type: '/cosmos.authz.v1beta1.MsgExec',
+        content: {
+          grantee: 'verana1grantee',
+          msgs: [
+            { '@type': VeranaParticipantMessageTypes.SelfCreateParticipant, did: sharedDid, role: 'ISSUER' },
+            { '@type': '/cosmos.bank.v1beta1.MsgSend', from_address: 'a', to_address: 'b' },
+          ],
+        },
+      },
+    ])
+    await insertChainEvent(txId, height, 0, 'create_participant', { participant_id: 601, msg_index: 0 })
+
+    const records = await persistIndexerEventsForBlock(height)
+
+    expect(records.map((record) => [record.event_type, record.payload.entity_id])).toEqual([
+      ['SelfCreateParticipant', '601'],
+    ])
+  })
 })
