@@ -1,4 +1,5 @@
 import type { ServiceBroker } from 'moleculer'
+import { VeranaParticipantMessageTypes } from '../../common/verana-message-types'
 import {
   extractImpactedParticipantIds,
   extractImpactedSessionIds,
@@ -31,6 +32,32 @@ function getParticipantHeightSyncLogger(broker: ServiceBroker): ParticipantHeigh
   return brokerWithLogger.getLogger?.('pp-height-sync') ?? brokerWithLogger.logger ?? console
 }
 
+// A session pays every fee beneficiary up the issuer and verifier validator chains; the event names none of them.
+async function fetchFeeBeneficiaryIds(msg: ParticipantMessagePayload, blockHeight: number): Promise<number[]> {
+  if (msg.type !== VeranaParticipantMessageTypes.CreateOrUpdateParticipantSession) return []
+  const content = msg.content ?? {}
+  const pending = [
+    content.issuer_participant_id,
+    content.issuerParticipantId,
+    content.verifier_participant_id,
+    content.verifierParticipantId,
+  ]
+    .map(Number)
+    .filter((id) => Number.isInteger(id) && id > 0)
+  const visited = new Set<number>(pending)
+  const ancestors: number[] = []
+  while (pending.length > 0) {
+    const id = pending.shift() as number
+    const ledger = (await fetchParticipant(id, blockHeight))?.participant
+    const validatorId = Number(ledger?.validator_participant_id ?? ledger?.validatorParticipantId ?? 0)
+    if (!Number.isInteger(validatorId) || validatorId <= 0 || visited.has(validatorId)) continue
+    visited.add(validatorId)
+    ancestors.push(validatorId)
+    pending.push(validatorId)
+  }
+  return ancestors
+}
+
 export async function runHeightSyncParticipant(
   broker: ServiceBroker,
   messages: ParticipantMessagePayload[]
@@ -47,7 +74,9 @@ export async function runHeightSyncParticipant(
       continue
     }
 
-    const participantIds = extractImpactedParticipantIds(msg)
+    const participantIds = [
+      ...new Set([...extractImpactedParticipantIds(msg), ...(await fetchFeeBeneficiaryIds(msg, blockHeight))]),
+    ]
     const sessionIds = extractImpactedSessionIds(msg)
     result.attempted += participantIds.length
     if (participantIds.length === 0 && sessionIds.length === 0) {
