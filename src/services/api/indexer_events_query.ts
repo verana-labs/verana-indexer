@@ -1116,7 +1116,7 @@ function loadProposal(proposalId: number, cache: ProposalCache): Promise<LoadedP
   return proposal
 }
 
-// The messages that an authz MsgExec runs have no transaction_message row when the block events are built.
+// The messages that an authz MsgExec runs have no transaction_message row when this code builds the block events.
 async function buildAuthzExecEvents(blockHeight: number): Promise<IndexerTxEvent[]> {
   const rows = (await knex('transaction_message as tm')
     .innerJoin('transaction as tx', 'tx.id', 'tm.tx_id')
