@@ -19,6 +19,7 @@ const ledger: Record<number, { id: number; validator_participant_id: number }> =
 
 describe('runHeightSyncParticipant fee beneficiaries', () => {
   beforeEach(() => {
+    jest.mocked(fetchParticipant).mockReset()
     jest
       .mocked(fetchParticipant)
       .mockImplementation(async (id) =>
@@ -43,6 +44,25 @@ describe('runHeightSyncParticipant fee beneficiaries', () => {
       .filter(([action]) => action === 'participantIngest.syncParticipantFromLedger')
       .map(([, params]) => params.ledgerParticipant.id)
     expect(synced).toEqual([6, 5, 3])
+  })
+
+  it('reads each fee beneficiary once for the walk and the sync, before the multi-height check', async () => {
+    const broker = { call: jest.fn().mockResolvedValue({ success: true, matches: true }) }
+
+    await runHeightSyncParticipant(broker as never, [
+      {
+        type: VeranaParticipantMessageTypes.CreateOrUpdateParticipantSession,
+        height: 100,
+        content: { id: 'session-uuid', issuer_participant_id: 6 },
+        txEvents: [],
+      },
+    ])
+
+    const readsAtBlock = jest
+      .mocked(fetchParticipant)
+      .mock.calls.filter(([, height]) => height === 100)
+      .map(([id]) => id)
+    expect(readsAtBlock).toEqual([6, 5, 3, 6, 5, 3])
   })
 
   it('does not walk validator chains for other participant messages', async () => {
