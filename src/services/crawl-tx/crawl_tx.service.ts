@@ -1344,7 +1344,7 @@ export default class CrawlTxService extends BullableService {
     }
   }
 
-  // Msgs a group proposal runs are not tx messages; read them from the proposal once this block's txs are committed.
+  // The messages of a group proposal are not tx messages. Read them from the proposal after the block txs are committed.
   private async addProposalMessages(payload: any): Promise<void> {
     for (const exec of payload.proposalExecs ?? []) {
       const proposal = await readProposal(exec.proposalId)

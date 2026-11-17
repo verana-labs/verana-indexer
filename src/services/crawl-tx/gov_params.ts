@@ -17,7 +17,7 @@ function readAttribute(event: BlockEvent, key: string): string | null {
   return null
 }
 
-// Gov runs a passed proposal's Msgs in EndBlock; the block's finalize events are the only record of it.
+// Gov runs the messages of a passed proposal in EndBlock. Only the finalize events of the block record this.
 export async function passedGovProposals(
   fromHeight: number,
   toHeight: number
@@ -49,7 +49,7 @@ async function fetchGovProposal(proposalId: number, height?: number): Promise<{ 
   return ((await res.json()) as { proposal?: { messages?: unknown } }).proposal
 }
 
-// From the chain: authz, group and v1beta1 submits keep no messages in the tx, and messages never change.
+// The chain stores the proposal messages. Authz, group and v1beta1 submits keep no messages in the tx.
 export async function loadGovProposalMessages(
   proposalId: number,
   height: number

@@ -281,7 +281,7 @@ export default class GenesisParamsService extends BullableService {
 
           for (const [module, data] of Object.entries(appState)) {
             if (data && typeof data === 'object' && 'params' in data) {
-              // Genesis only seeds a module; later changes come from the chain and must not be reverted here.
+              // Genesis seeds only a module that has no params. Do not revert the later changes from the chain.
               const existing = await trx('module_params').where({ module }).first()
               if (!existing) {
                 await trx('module_params').insert({
