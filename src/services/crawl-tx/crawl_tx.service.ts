@@ -1327,7 +1327,7 @@ export default class CrawlTxService extends BullableService {
 
   private async applyGovernanceParamChanges(fromHeight: number, toHeight: number): Promise<void> {
     for (const { height, proposalId } of await passedGovProposals(fromHeight, toHeight)) {
-      const messages = await loadGovProposalMessages(proposalId)
+      const messages = await loadGovProposalMessages(proposalId, height)
       if (!messages)
         throw new Error(`Governance proposal ${proposalId} executed at block ${height} could not be loaded`)
       for (const message of messages) {

@@ -1,6 +1,9 @@
 import { Buffer } from 'node:buffer'
+import { getLcdBaseUrl } from '../../common/utils/account_balance_utils'
 import knex from '../../common/utils/db_connection'
 import { decodeProposalMessages, parseEventAttrValue } from '../crawl-group/group_helpers'
+
+const LCD_TIMEOUT_MS = 8000
 
 type BlockEvent = { type?: string; attributes?: Array<{ key?: string; value?: string }> }
 
@@ -35,20 +38,23 @@ export async function passedGovProposals(
   )
 }
 
-export async function loadGovProposalMessages(proposalId: number): Promise<Array<Record<string, unknown>> | undefined> {
-  const submit = await knex('event_attribute as ea')
-    .innerJoin('event as e', 'e.id', 'ea.event_id')
-    .where('e.type', 'submit_proposal')
-    .where('ea.key', 'proposal_id')
-    .whereIn('ea.value', [String(proposalId), JSON.stringify(String(proposalId))])
-    .select('e.tx_id', 'e.tx_msg_index')
-    .first()
-  if (!submit?.tx_id) return undefined
-  const message = await knex('transaction_message')
-    .where('tx_id', submit.tx_id)
-    .where('index', Number(submit.tx_msg_index ?? 0))
-    .select('content')
-    .first()
-  const messages = (message?.content as { messages?: unknown } | undefined)?.messages
-  return messages === undefined ? undefined : decodeProposalMessages(messages)
+async function fetchGovProposal(proposalId: number, height?: number): Promise<{ messages?: unknown } | undefined> {
+  const baseUrl = getLcdBaseUrl()
+  if (!baseUrl) throw new Error('LCD_ENDPOINT is not configured')
+  const res = await fetch(`${baseUrl}/cosmos/gov/v1/proposals/${proposalId}`, {
+    headers: height ? { 'x-cosmos-block-height': String(height) } : {},
+    signal: AbortSignal.timeout(LCD_TIMEOUT_MS),
+  })
+  if (!res.ok) return undefined
+  return ((await res.json()) as { proposal?: { messages?: unknown } }).proposal
+}
+
+// From the chain: authz, group and v1beta1 submits keep no messages in the tx, and messages never change.
+export async function loadGovProposalMessages(
+  proposalId: number,
+  height: number
+): Promise<Array<Record<string, unknown>> | undefined> {
+  const proposal =
+    (await fetchGovProposal(proposalId, height).catch(() => undefined)) ?? (await fetchGovProposal(proposalId))
+  return Array.isArray(proposal?.messages) ? decodeProposalMessages(proposal.messages) : undefined
 }
