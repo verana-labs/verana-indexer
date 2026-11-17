@@ -419,7 +419,7 @@ const CREATED_ENTITY_EVENTS: Record<string, { eventType: string; idKey: string }
   [VeranaParticipantMessageTypes.StartParticipantOP]: { eventType: 'start_participant_op', idKey: 'participant_id' },
 }
 
-// A create Msg carries no id; the chain reports it on the create event, one event per create in Msg order.
+// A create message has no id. The chain gives the id in the create event, one event for each create in message order.
 async function loadCreatedEntityId(row: EventRow): Promise<string | undefined> {
   const created = CREATED_ENTITY_EVENTS[row.message_type]
   if (!created) return undefined
@@ -434,7 +434,12 @@ async function loadCreatedEntityId(row: EventRow): Promise<string | undefined> {
     .offset(row.occurrence ?? 0)
     .first()
   const entityId = readPositiveInteger(parseEventAttrValue(attribute?.value))
-  return entityId ? String(entityId) : undefined
+  if (!entityId) {
+    throw new Error(
+      `No ${created.eventType} event with ${created.idKey} for tx ${row.tx_hash} message ${row.message_index}`
+    )
+  }
+  return String(entityId)
 }
 
 function toCorporationId(value: unknown): number | undefined {
@@ -1111,7 +1116,7 @@ function loadProposal(proposalId: number, cache: ProposalCache): Promise<LoadedP
   return proposal
 }
 
-// Msgs an authz MsgExec runs have no transaction_message row of their own when the block's events are built.
+// The messages that an authz MsgExec runs have no transaction_message row when the block events are built.
 async function buildAuthzExecEvents(blockHeight: number): Promise<IndexerTxEvent[]> {
   const rows = (await knex('transaction_message as tm')
     .innerJoin('transaction as tx', 'tx.id', 'tm.tx_id')

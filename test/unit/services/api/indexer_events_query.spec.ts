@@ -166,6 +166,7 @@ describe('indexer_events_query', () => {
     sender?: string
     content?: Record<string, unknown>
     type?: string
+    chainEvent?: { type: string; attributes: Record<string, string> }
   }): Promise<void> {
     txHashes.push(args.hash)
     const txId = nextId++
@@ -195,6 +196,27 @@ describe('indexer_events_query', () => {
       sender: args.sender ?? did,
       content: args.content ?? { id: 42, applicant: did },
     })
+    const chainEvent = args.chainEvent
+    if (!chainEvent) return
+    const eventId = nextId++
+    await knex('event').insert({
+      id: eventId,
+      tx_id: typeof tx === 'object' ? tx.id : tx,
+      tx_msg_index: args.messageIndex,
+      type: chainEvent.type,
+      block_height: args.height,
+      source: 'TX_EVENT',
+    })
+    await knex('event_attribute').insert(
+      Object.entries(chainEvent.attributes).map(([key, value], index) => ({
+        event_id: eventId,
+        index,
+        block_height: args.height,
+        composite_key: `${chainEvent.type}.${key}`,
+        key,
+        value,
+      }))
+    )
   }
 
   async function insertStoredIndexerEvent(args: {
@@ -944,6 +966,7 @@ describe('indexer_events_query', () => {
           validator_participant_id: validatorParticipantId,
           did: applicantDid,
         },
+        chainEvent: { type: 'start_participant_op', attributes: { participant_id: String(applicantParticipantId) } },
       })
 
       const [record] = await persistIndexerEventsForBlock(height)
@@ -999,6 +1022,7 @@ describe('indexer_events_query', () => {
           validator_participant_id: validatorParticipantId,
           did: applicantDid,
         },
+        chainEvent: { type: 'start_participant_op', attributes: { participant_id: String(applicantParticipantId) } },
       })
       await insertTxMessage({
         height,

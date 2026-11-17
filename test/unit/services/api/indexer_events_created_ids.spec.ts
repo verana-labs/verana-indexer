@@ -140,6 +140,18 @@ describe('indexer events take created entity ids from the chain event', () => {
     expect(records.map((record) => record.payload.entity_id)).toEqual(['501', '502'])
   })
 
+  it('fails the block when a create has no chain event, and stores no event for it', async () => {
+    const height = baseHeight + 3
+    await insertTx(height, `missing-${runId}`, [
+      { type: VeranaEcosystemMessageTypes.CreateEcosystem, content: { did: sharedDid, corporation: 'verana1corp' } },
+    ])
+
+    await expect(persistIndexerEventsForBlock(height)).rejects.toThrow(
+      `No create_ecosystem event with ecosystem_id for tx missing-${runId} message 0`
+    )
+    expect(await knex('indexer_events').where({ block_height: height })).toHaveLength(0)
+  })
+
   it('emits an event for each Verana message an authz MsgExec runs', async () => {
     const height = baseHeight + 2
     const txId = await insertTx(height, `authz-${runId}`, [
