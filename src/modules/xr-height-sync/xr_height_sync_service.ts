@@ -1,7 +1,7 @@
 import { Buffer } from 'node:buffer'
 import type { ServiceBroker } from 'moleculer'
 import { SERVICE } from '../../common'
-import { fetchExchangeRates, serializeLedgerExchangeRate } from './xr_height_sync_helpers'
+import { fetchExchangeRate, serializeLedgerExchangeRate } from './xr_height_sync_helpers'
 
 export const XR_EVENT_TYPES = {
   CREATE: 'create_exchange_rate',
@@ -34,7 +34,7 @@ function getAttr(event: BlockEvent, key: string): string | undefined {
   return undefined
 }
 
-export function buildEventTypeResolverFromEvents(events: BlockEvent[]): (id: number) => string {
+function eventTypeById(events: BlockEvent[]): Map<number, string> {
   const byId = new Map<number, string>()
   for (const event of events) {
     if (!event.type || !XR_EVENT_TYPE_SET.has(event.type)) continue
@@ -43,7 +43,7 @@ export function buildEventTypeResolverFromEvents(events: BlockEvent[]): (id: num
       byId.set(id, event.type)
     }
   }
-  return (id: number): string => byId.get(id) ?? 'SYNC_LEDGER'
+  return byId
 }
 
 export function hasExchangeRateEvents(events: BlockEvent[]): boolean {
@@ -60,14 +60,12 @@ export async function runHeightSyncXR(
     return
   }
 
-  const ledgerRates = await fetchExchangeRates(blockHeight)
-  const resolveEventType = buildEventTypeResolverFromEvents(events)
-
-  for (const ledgerRate of ledgerRates) {
+  for (const [id, eventType] of eventTypeById(events)) {
+    const ledgerRate = await fetchExchangeRate(id, blockHeight)
     await broker.call(`${SERVICE.V1.ExchangeRateDatabaseService.path}.syncFromLedger`, {
       exchangeRate: serializeLedgerExchangeRate(ledgerRate),
       blockHeight,
-      eventType: resolveEventType(ledgerRate.id),
+      eventType,
     })
   }
 }

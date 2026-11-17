@@ -156,6 +156,12 @@ spec:
                 value: {{ .Values.database.host }}
               - name: POSTGRES_DB
                 value: {{ .Values.database.db }}
+              - name: USE_HEIGHT_SYNC_CS
+                value: "true"
+              - name: USE_HEIGHT_SYNC_TR
+                value: "true"
+              - name: USE_HEIGHT_SYNC_TD
+                value: "true"
 {{- with .Values.extraEnv }}
 {{- toYaml . | nindent 14 }}
 {{- end }}

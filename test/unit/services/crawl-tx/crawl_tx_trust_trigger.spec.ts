@@ -75,6 +75,7 @@ describe('CrawlTxService (trust resolver decoupled)', () => {
     svc.broker = { call: jest.fn().mockResolvedValue(undefined) }
     svc.getQueueManager = () => ({ getQueue: () => trustQueue })
     svc.applyScheduledFlipsForRange = jest.fn().mockResolvedValue(undefined)
+    svc.applyGovernanceParamChanges = jest.fn().mockResolvedValue(undefined)
     svc.applyScheduledFlipsForBlockHeight = jest.fn().mockResolvedValue(undefined)
     svc.processTransactionsForBlock = jest.fn()
     svc.processPayloads = jest.fn()

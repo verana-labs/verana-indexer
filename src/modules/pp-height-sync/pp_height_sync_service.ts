@@ -1,4 +1,5 @@
 import type { ServiceBroker } from 'moleculer'
+import { VeranaParticipantMessageTypes } from '../../common/verana-message-types'
 import {
   extractImpactedParticipantIds,
   extractImpactedSessionIds,
@@ -31,6 +32,37 @@ function getParticipantHeightSyncLogger(broker: ServiceBroker): ParticipantHeigh
   return brokerWithLogger.getLogger?.('pp-height-sync') ?? brokerWithLogger.logger ?? console
 }
 
+type LedgerParticipant = Record<string, unknown> | undefined
+
+// A session pays every fee beneficiary up the issuer and verifier validator chains. The event names none of them.
+async function fetchFeeBeneficiaries(
+  msg: ParticipantMessagePayload,
+  blockHeight: number
+): Promise<Map<number, LedgerParticipant>> {
+  const ledger = new Map<number, LedgerParticipant>()
+  if (msg.type !== VeranaParticipantMessageTypes.CreateOrUpdateParticipantSession) return ledger
+  const content = msg.content ?? {}
+  const pending = [
+    content.issuer_participant_id,
+    content.issuerParticipantId,
+    content.verifier_participant_id,
+    content.verifierParticipantId,
+  ]
+    .map(Number)
+    .filter((id) => Number.isInteger(id) && id > 0)
+  const visited = new Set<number>(pending)
+  while (pending.length > 0) {
+    const id = pending.shift() as number
+    const participant = (await fetchParticipant(id, blockHeight))?.participant
+    ledger.set(id, participant)
+    const validatorId = Number(participant?.validator_participant_id ?? participant?.validatorParticipantId ?? 0)
+    if (!Number.isInteger(validatorId) || validatorId <= 0 || visited.has(validatorId)) continue
+    visited.add(validatorId)
+    pending.push(validatorId)
+  }
+  return ledger
+}
+
 export async function runHeightSyncParticipant(
   broker: ServiceBroker,
   messages: ParticipantMessagePayload[]
@@ -47,7 +79,8 @@ export async function runHeightSyncParticipant(
       continue
     }
 
-    const participantIds = extractImpactedParticipantIds(msg)
+    const feeBeneficiaries = await fetchFeeBeneficiaries(msg, blockHeight)
+    const participantIds = [...new Set([...extractImpactedParticipantIds(msg), ...feeBeneficiaries.keys()])]
     const sessionIds = extractImpactedSessionIds(msg)
     result.attempted += participantIds.length
     if (participantIds.length === 0 && sessionIds.length === 0) {
@@ -60,8 +93,9 @@ export async function runHeightSyncParticipant(
     const impactedParticipantIds = new Set<number>()
 
     for (const participantId of participantIds) {
-      const ledgerParticipantResponse = await fetchParticipant(participantId, blockHeight)
-      const ledgerParticipant = ledgerParticipantResponse?.participant
+      const ledgerParticipant = feeBeneficiaries.has(participantId)
+        ? feeBeneficiaries.get(participantId)
+        : (await fetchParticipant(participantId, blockHeight))?.participant
       if (!ledgerParticipant) continue
       impactedParticipantIds.add(participantId)
 

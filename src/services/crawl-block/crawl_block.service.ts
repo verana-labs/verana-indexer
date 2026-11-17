@@ -5,7 +5,7 @@ import {
   GetNodeInfoResponseSDKType,
 } from '@aura-nw/aurajs/types/codegen/cosmos/base/tendermint/v1beta1/query'
 import { CommitSigSDKType } from '@aura-nw/aurajs/types/codegen/tendermint/types/types'
-import { JsonRpcRequest, JsonRpcSuccessResponse } from '@cosmjs/json-rpc'
+import { JsonRpcRequest } from '@cosmjs/json-rpc'
 import { HttpBatchClient } from '@cosmjs/tendermint-rpc'
 import { createJsonRpcRequest } from '@cosmjs/tendermint-rpc/build/jsonrpc'
 import { Service } from '@ourparentcenter/moleculer-decorators-extended'
@@ -50,6 +50,7 @@ import config from '../../config.json' with { type: 'json' }
 import { Block, BlockCheckpoint, Event, EventAttribute } from '../../models'
 import { Network } from '../../network'
 import { indexerStatusManager } from '../manager/indexer_status.manager'
+import { takeContiguousBlocks } from './contiguous_blocks'
 
 @Service({
   name: SERVICE.V1.CrawlBlock.key,
@@ -492,37 +493,18 @@ export default class CrawlBlockService extends BullableService {
           const blockResponsesResults = await Promise.allSettled(blockQueries)
           await throwIfHeapCriticalDuringCrawl('crawl-block:after-rpc-batch', this.logger)
 
-          const blockResponses: JsonRpcSuccessResponse[] = []
-          let failedBlocks = 0
-          const failedSampleHeights: number[] = []
+          const { blocks: fetchedBlocks, firstMissingHeight } = takeContiguousBlocks(blockResponsesResults, startBlock)
 
-          for (let i = 0; i < blockResponsesResults.length; i += 2) {
-            const blockResult = blockResponsesResults[i]
-            const blockResultsResult = blockResponsesResults[i + 1]
-            const blockHeight = startBlock + Math.floor(i / 2)
-
-            if (blockResult.status === 'fulfilled' && blockResultsResult.status === 'fulfilled') {
-              blockResponses.push(blockResult.value, blockResultsResult.value)
-            } else {
-              failedBlocks++
-              if (failedSampleHeights.length < 5) {
-                failedSampleHeights.push(blockHeight)
-              }
-            }
+          if (firstMissingHeight !== null) {
+            this.logger.warn(
+              `Block ${firstMissingHeight} could not be fetched. Storing the ${fetchedBlocks.length} block(s) before it and retrying from ${firstMissingHeight} next cycle.`
+            )
           }
 
-          if (blockResponses.length === 0) {
-            this.logger.error('All block RPC calls failed. Skipping this cycle.')
+          if (fetchedBlocks.length === 0) {
             blockQueries.length = 0
             blockResponsesResults.length = 0
             return
-          }
-
-          if (failedBlocks > 0) {
-            this.logger.warn(
-              `${failedBlocks} block(s) failed to fetch, processing ${blockResponses.length / 2} successful blocks. ` +
-                `Sample failed heights: ${failedSampleHeights.join(', ')}`
-            )
           }
 
           interface MergedBlockResponse {
@@ -542,18 +524,12 @@ export default class CrawlBlockService extends BullableService {
 
           const mergeBlockResponses: MergedBlockResponse[] = []
 
-          for (let i = 0; i < blockResponses?.length; i += 2) {
-            if (i > 0 && i % 100 === 0) {
+          for (let i = 0; i < fetchedBlocks.length; i += 1) {
+            if (i > 0 && i % 50 === 0) {
               await throwIfHeapCriticalDuringCrawl('crawl-block:merge-responses', this.logger)
             }
-            const blockData = blockResponses[i]?.result as any
-            const blockResultData = blockResponses[i + 1]?.result
-
-            if (!blockData || !blockResultData) {
-              const blockHeight = startBlock + Math.floor(i / 2)
-              this.logger.warn(`Skipping block ${blockHeight} due to missing data`)
-              continue
-            }
+            const blockData = fetchedBlocks[i].block.result as any
+            const blockResultData = fetchedBlocks[i].blockResults.result
 
             // Extract only the fields needed by handleListBlock.
             // Crucially, we do NOT copy block.data.txs (base64 transaction bytes)
@@ -576,7 +552,7 @@ export default class CrawlBlockService extends BullableService {
           // base64 transaction bytes that are no longer needed.
           blockQueries.length = 0
           blockResponsesResults.length = 0
-          blockResponses.length = 0
+          fetchedBlocks.length = 0
 
           if (mergeBlockResponses.length === 0) {
             this.logger.warn('⚠️ No valid blocks to process. Skipping this cycle.')

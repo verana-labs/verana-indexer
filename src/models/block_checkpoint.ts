@@ -58,9 +58,8 @@ export class BlockCheckpoint extends BaseModel {
     const currentJobHeight = startHeight
     const hasHighBlockCheckpoint = crawlBlockCheckpoint && crawlBlockCheckpoint.height > 1000
     const _isCurrentJobLow = currentJobHeight < 100
-    const isDependentLow = lastHeight < 100
 
-    if (hasHighBlockCheckpoint && isDependentLow && lastHeight === 0) {
+    if (hasHighBlockCheckpoint && !lastHeightCheckpoint) {
       try {
         const result = await knex('block').max('height as max').first()
         if (result && (result as { max: string | number | null }).max) {
