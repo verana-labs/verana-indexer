@@ -58,7 +58,6 @@ const PAYLOAD_MESSAGE_LISTS = [
   'credentialSchemaMessages',
   'participantMessages',
   'trustDepositList',
-  'updateParamsList',
 ] as const
 
 type TxEventWithAttributes = { attributes?: Array<{ key?: string; value?: string }> }
@@ -558,7 +557,6 @@ export default class CrawlTxService extends BullableService {
           credentialSchemaMessages: [],
           participantMessages: [],
           trustDepositList: [],
-          updateParamsList: [],
           blockHeight,
           csEventsFromBlock: [],
           proposalExecs: [],
@@ -595,9 +593,6 @@ export default class CrawlTxService extends BullableService {
             }
             if (txPayloads.proposalExecs?.length) {
               allPayloads.proposalExecs.push(...txPayloads.proposalExecs)
-            }
-            if (txPayloads.updateParamsList?.length) {
-              allPayloads.updateParamsList.push(...txPayloads.updateParamsList)
             }
           }
         }
@@ -1201,7 +1196,6 @@ export default class CrawlTxService extends BullableService {
       credentialSchemaMessages: [],
       participantMessages: [],
       trustDepositList: [],
-      updateParamsList: [],
     }
   }
 
@@ -1299,17 +1293,6 @@ export default class CrawlTxService extends BullableService {
         }
       })
 
-    const updateParamsList = successfulMsgs
-      .filter((msg: any) => isUpdateParamsMessageType(msg.type))
-      .map((msg: any) => {
-        const parentTx = listDecodedTx.find((tx) => tx.id === msg.tx_id)
-        return {
-          message: msg,
-          height: parentTx?.height,
-          txHash: parentTx?.hash,
-        }
-      })
-
     await this.validateAllMessagesProcessed(successfulMsgs, listDecodedTx)
 
     this.logger.info(`[insertRelatedTx] Completed processing all messages (payload prepared)`)
@@ -1320,7 +1303,6 @@ export default class CrawlTxService extends BullableService {
       credentialSchemaMessages,
       participantMessages,
       trustDepositList,
-      updateParamsList,
       proposalExecs,
     }
   }
@@ -1913,16 +1895,6 @@ export default class CrawlTxService extends BullableService {
           })
         }
       })
-    }
-
-    if (payload.updateParamsList?.length) {
-      for (const updateMsg of payload.updateParamsList) {
-        try {
-          await this.broker.call(`${SERVICE.V1.GenesisParamsService.path}.handleUpdateParams`, updateMsg)
-        } catch (err) {
-          this.logger.error(`[processPayloads] Failed to process UpdateParams message:`, err)
-        }
-      }
     }
   }
 }
