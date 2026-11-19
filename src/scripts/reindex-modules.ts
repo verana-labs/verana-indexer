@@ -575,6 +575,7 @@ const ALTER_MIGRATIONS = [
   '20260402000000_create_trust_results',
   '20261105000000_indexer_events_unique_proposal_message',
   '20261110000000_drop_ecosystem_height_unique',
+  '20261119000000_language_columns_text',
 ]
 
 async function runMigrations(db: Knex): Promise<void> {
