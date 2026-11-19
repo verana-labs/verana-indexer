@@ -62,7 +62,28 @@ function corpRow(over: Record<string, unknown> = {}) {
       language: 'en',
       created: '2024-01-01',
       modified: '2024-02-01',
-      governanceFrameworkVersions: [{ version: 1, active_since: '2024-01-01', documents: [{ language: 'en' }] }],
+      governanceFrameworkVersions: [
+        {
+          id: 9,
+          corporation_id: 1,
+          ecosystem_id: 0,
+          version: 1,
+          gfv_id: 3,
+          created: '2024-01-01',
+          active_since: '2024-01-01',
+          documents: [
+            {
+              id: 8,
+              gfv_id: 9,
+              gfd_id: 4,
+              created: '2024-01-01',
+              language: 'en',
+              url: 'https://example.com/v1',
+              digest_sri: 'sha384-v1',
+            },
+          ],
+        },
+      ],
       ...over,
     }),
   }
@@ -142,7 +163,24 @@ describe('CorporationApiService.listCorporationsV4', () => {
       refunded: 9,
     })
     expect(res.corporations[0].versions).toEqual([
-      { version: 1, active_since: '2024-01-01', documents: [{ language: 'en' }], ecosystem_id: null },
+      {
+        id: 3,
+        ecosystem_id: null,
+        corporation_id: 1,
+        created: '2024-01-01',
+        version: 1,
+        active_since: '2024-01-01',
+        documents: [
+          {
+            id: 4,
+            gfv_id: 3,
+            created: '2024-01-01',
+            language: 'en',
+            url: 'https://example.com/v1',
+            digest_sri: 'sha384-v1',
+          },
+        ],
+      },
     ])
     // second corporation has no trust-deposit row -> zeroed snapshot
     expect(res.corporations[1]).toMatchObject({ id: 2, controlled_ecosystems: 0, deposit: 0 })

@@ -404,11 +404,9 @@ pnpm run reindex
 ### What It Does
 
 The reindexing script:
-- Preserves `block` table (NEVER dropped)
-- Drops all transaction and module tables
-- Clears checkpoints and sets `crawl:block` to highest block
-- Recreates tables via migrations
-- Resets all ID sequences to start from 1
+- Preserves the block data, the checkpoint tables and the migration records
+- Empties every other table and restarts its ID sequence from 1 (no table is dropped, the schema does not change)
+- Resets the checkpoints and sets `crawl:block` to the highest block, in the same database transaction
 - Backs up and removes `genesis.json` for re-fetch
 
 ### Memory Optimization
@@ -425,12 +423,8 @@ Both scripts use optimized Node.js flags:
 ### Process Flow
 
 1. **Connect to database** (waits up to 60s)
-2. **Drop module tables** (tables including transaction, ecosystem, trust_deposits, participants, etc.)
-3. **Clear checkpoints** (backs up migration checkpoints, sets crawl:block to highest block)
-4. **Run migrations** (recreates all tables)
-5. **Reset sequences** (IDs start from 1)
-6. **Handle genesis** (backup and remove genesis.json)
-7. **Restore migration checkpoints** (partition migrations)
+2. **Reset data** (empties every table that is rebuilt from blocks, restarts the IDs from 1, and resets the checkpoints with crawl:block at the highest block)
+3. **Handle genesis** (backup and remove genesis.json)
 
 ### After Reindexing
 
@@ -451,10 +445,9 @@ The indexer will:
  **Always backup your database before running reindexing**
 
 The script will:
-1. Drop all transaction tables (`transaction`, `transaction_message`)
-2. Drop all module tables (38 tables total)
-3. Clear checkpoints (sets crawl:block to highest block)
-4. Recreate all tables with fresh IDs
+1. Empty all transaction and event tables
+2. Empty all module tables
+3. Reset the checkpoints (sets crawl:block to highest block)
 
 **For detailed documentation, see [REINDEX.md](./REINDEX.md)**
 

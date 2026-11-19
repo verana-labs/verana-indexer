@@ -339,7 +339,7 @@ async function waitForDatabase(config: any, maxRetries = 30, delayMs = 2000): Pr
               console.error(
                 `  ❌ CRITICAL ERROR: ${stillMissing.length} table(s) still missing after migration: ${stillMissing.join(', ')}`
               )
-              console.error('  Please run: pnpm run reindex:dev')
+              console.error('  Restore a backup or rebuild the database. The reindex script does not create tables.')
               process.exitCode = 1
             } else {
               console.log('  ✓ All critical tables verified and created')
@@ -438,19 +438,21 @@ async function waitForDatabase(config: any, maxRetries = 30, delayMs = 2000): Pr
                   console.error(
                     `  ❌ CRITICAL ERROR: ${stillMissing.length} table(s) still missing: ${stillMissing.join(', ')}`
                   )
-                  console.error('  Please run: pnpm run reindex:dev')
+                  console.error(
+                    '  Restore a backup or rebuild the database. The reindex script does not create tables.'
+                  )
                   process.exitCode = 1
                 } else {
                   console.log('  ✓ All critical tables verified and created')
                 }
               } catch (retryError: any) {
                 console.error(`  ❌ Retry failed: ${retryError.message}`)
-                console.error('  Please run: pnpm run reindex:dev')
+                console.error('  Restore a backup or rebuild the database. The reindex script does not create tables.')
                 process.exitCode = 1
               }
             } else {
               console.error(`  ❌ Failed to force run migrations: ${forceErrorMsg}`)
-              console.error('  Please run: pnpm run reindex:dev')
+              console.error('  Restore a backup or rebuild the database. The reindex script does not create tables.')
               process.exitCode = 1
             }
           }

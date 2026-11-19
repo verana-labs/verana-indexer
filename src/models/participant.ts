@@ -86,7 +86,7 @@ export default class Participant extends BaseModel {
           type: 'string',
           enum: ['UNSPECIFIED', 'ECOSYSTEM', 'ISSUER_GRANTOR', 'VERIFIER_GRANTOR', 'ISSUER', 'VERIFIER', 'HOLDER'],
         },
-        did: { type: 'string', maxLength: 255 },
+        did: { type: 'string' },
         corporation_id: { type: 'integer' },
         validation_fees: { type: 'integer' },
         issuance_fees: { type: 'integer' },

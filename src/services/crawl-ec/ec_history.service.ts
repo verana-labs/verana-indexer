@@ -335,7 +335,7 @@ export default class EcosystemHistoryService extends BaseService {
               : null,
           documents: (Array.isArray(v.documents) ? v.documents : []).map((d: any) => ({
             id: d.id,
-            url: d.url,
+            gfv_id: d.gfv_id ?? d.version_id ?? v.id ?? v.version_id,
             created:
               d.created != null
                 ? d.created instanceof Date
@@ -343,8 +343,8 @@ export default class EcosystemHistoryService extends BaseService {
                   : new Date(d.created).toISOString()
                 : null,
             language: d.language ?? null,
+            url: d.url,
             digest_sri: d.digest_sri ?? null,
-            version_id: d.version_id ?? v.id ?? v.version_id,
           })),
         }))
         .filter((v: any) => v.version > 0)

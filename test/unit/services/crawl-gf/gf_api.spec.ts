@@ -133,6 +133,25 @@ describe('GovernanceFrameworkApiService.getGovernanceFrameworkVersionV4', () => 
     })
   })
 
+  it('returns a replaced document once, with its first created time', async () => {
+    const [en] = gfvRow().documents
+    const replacement = { ...en, id: 9, created: '2024-01-20T00:00:00.000Z', url: 'http://example.com/en-2.pdf' }
+    tableResolvesTo(CoGovernanceFrameworkVersion as any, gfvRow({ documents: [en, replacement] }))
+
+    const res: any = await service.getGovernanceFrameworkVersionV4({ params: { id: '7' }, meta: {} } as any)
+
+    expect(res.version.documents).toEqual([
+      {
+        id: 11,
+        gfv_id: 7,
+        created: '2024-01-10T00:00:00.000Z',
+        language: 'en',
+        url: 'http://example.com/en-2.pdf',
+        digest_sri: 'sha384-en',
+      },
+    ])
+  })
+
   it('scopes the co-table lookup to CGF (ecosystem_id = 0) so EGF ids fall through to the ecosystem table', async () => {
     const coQb = tableResolvesTo(CoGovernanceFrameworkVersion as any, undefined)
     tableResolvesTo(

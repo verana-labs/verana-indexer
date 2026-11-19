@@ -3,6 +3,7 @@ import knex from '../../common/utils/db_connection'
 import { Ecosystem } from '../../models/ecosystem'
 import TrustDeposit from '../../models/trust_deposit'
 import { parseListLimit } from '../api/api_shared'
+import { buildGfVersionObject, type GfDocumentRow, type GfVersionRow } from '../crawl-gf/gf_version'
 import {
   calculateParticipantState,
   normalizeParticipantType,
@@ -294,10 +295,7 @@ export async function getCorporationTrustDepositAtHeight(
   return row ? mapTrustDepositRow(row as Record<string, unknown>) : emptyTrustDepositSnapshot()
 }
 
-function orderDocumentsByLanguage(
-  documents: Array<Record<string, unknown>>,
-  preferredLanguage: string
-): Array<Record<string, unknown>> {
+function orderDocumentsByLanguage(documents: GfDocumentRow[], preferredLanguage: string): GfDocumentRow[] {
   const preferred = documents.filter((d) => d.language === preferredLanguage)
   const rest = documents.filter((d) => d.language !== preferredLanguage)
   return [...preferred, ...rest]
@@ -308,7 +306,7 @@ export function applyGfData(
   gfData: GfDataMode,
   preferredLanguage?: string,
   asOf?: Date
-): CorporationGfVersion[] {
+): Array<Record<string, unknown>> {
   // At a height, only versions that already existed (created <= asOf) count.
   const existing = asOf
     ? versions.filter((v) => v.created != null && new Date(v.created as string | Date) <= asOf)
@@ -326,18 +324,11 @@ export function applyGfData(
     selected = [...existing]
   }
 
-  // ecosystem_id is null for CGF versions (VPR invariant: only EGF versions carry one).
-  return selected.map((v) => {
-    let documents = v.documents
-    // At a height, exclude documents added after that block.
-    if (asOf && documents) {
-      documents = documents.filter((d) => d.created != null && new Date(d.created as string | Date) <= asOf)
-    }
-    if (preferredLanguage) {
-      documents = orderDocumentsByLanguage(documents ?? [], preferredLanguage)
-    }
-    return { ...v, ecosystem_id: v.ecosystem_id ? v.ecosystem_id : null, documents }
-  })
+  return selected.map((v) =>
+    buildGfVersionObject(v as unknown as GfVersionRow, true, asOf, (documents) =>
+      preferredLanguage ? orderDocumentsByLanguage(documents, preferredLanguage) : documents
+    )
+  )
 }
 
 // Shared by Get and List so the two responses stay identical.

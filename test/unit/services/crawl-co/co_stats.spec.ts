@@ -193,6 +193,8 @@ describe('co_stats.getCorporationTrustDeposit', () => {
 })
 
 describe('co_stats.applyGfData', () => {
+  const languagesOf = (version: Record<string, unknown>) =>
+    (version.documents as Array<{ language: string }>).map((d) => d.language)
   const versions = [
     { version: 1, active_since: '2020-01-01T00:00:00Z', documents: [{ language: 'en' }, { language: 'fr' }] },
     { version: 2, active_since: '2021-01-01T00:00:00Z', documents: [{ language: 'en' }] },
@@ -214,8 +216,8 @@ describe('co_stats.applyGfData', () => {
 
   it("orders each version's documents by preferred_language (preferred first, none dropped)", () => {
     const result = applyGfData(versions, 'all', 'fr')
-    expect(result[0].documents).toEqual([{ language: 'fr' }, { language: 'en' }])
-    expect(result[1].documents).toEqual([{ language: 'en' }])
+    expect(languagesOf(result[0])).toEqual(['fr', 'en'])
+    expect(languagesOf(result[1])).toEqual(['en'])
   })
 
   it('normalizes ecosystem_id to null for CGF versions (spec: ecosystem_id set iff EGF)', () => {
@@ -256,7 +258,7 @@ describe('co_stats.applyGfData', () => {
     // v2 (created after asOf) excluded; v1 kept but its late fr document dropped
     expect(result).toHaveLength(1)
     expect(result[0].version).toBe(1)
-    expect(result[0].documents).toEqual([{ language: 'en', created: '2020-01-01T00:00:00Z' }])
+    expect(languagesOf(result[0])).toEqual(['en'])
   })
 })
 
@@ -277,5 +279,60 @@ describe('co_stats.parseGfDataMode', () => {
     const result = parseGfDataMode('actve')
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.message).toContain('gf_data')
+  })
+})
+
+describe('co_stats.applyGfData response shape', () => {
+  const added = '2026-11-19T16:54:14.332Z'
+  const replaced = '2026-11-19T16:54:29.400Z'
+  const row = (documents: Array<Record<string, unknown>>) => ({
+    id: 7,
+    corporation_id: 2,
+    ecosystem_id: 0,
+    version: 2,
+    gfv_id: 10,
+    created: added,
+    active_since: null,
+    documents,
+  })
+  const first = {
+    id: 11,
+    gfv_id: 7,
+    gfd_id: 14,
+    language: 'es-419',
+    url: 'first',
+    digest_sri: 'sha384-1',
+    created: added,
+  }
+  const second = { ...first, id: 14, url: 'second', digest_sri: 'sha384-2', created: replaced }
+
+  it('returns the chain ids of a version and its documents, not the row ids', () => {
+    expect(applyGfData([row([first])], 'all')).toEqual([
+      {
+        id: 10,
+        ecosystem_id: null,
+        corporation_id: 2,
+        created: added,
+        version: 2,
+        active_since: null,
+        documents: [{ id: 14, gfv_id: 10, created: added, language: 'es-419', url: 'first', digest_sri: 'sha384-1' }],
+      },
+    ])
+  })
+
+  it('returns a replaced document once, with its first created time', () => {
+    const [version] = applyGfData([row([first, second])], 'all')
+
+    expect(version.documents).toEqual([
+      { id: 14, gfv_id: 10, created: added, language: 'es-419', url: 'second', digest_sri: 'sha384-2' },
+    ])
+  })
+
+  it('returns the document that was live at a height before the replacement', () => {
+    const [version] = applyGfData([row([first, second])], 'all', undefined, new Date('2026-11-19T16:54:20.000Z'))
+
+    expect(version.documents).toEqual([
+      { id: 14, gfv_id: 10, created: added, language: 'es-419', url: 'first', digest_sri: 'sha384-1' },
+    ])
   })
 })
