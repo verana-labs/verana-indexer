@@ -332,34 +332,25 @@ export default class EcosystemDatabaseService extends BaseService {
 
               if (!updatedDoc || !updatedDoc.id) continue
 
-              const chainDocId = Number((d as any).id ?? (d as any).document_id ?? updatedDoc.id)
-              if (hasNewTrTables && Number.isInteger(chainVersionId) && chainVersionId > 0) {
-                const trDocBasePayload = {
-                  version_id: chainVersionId,
-                  created: updatedDoc.created ?? null,
-                  language: updatedDoc.language ?? '',
-                  url: updatedDoc.url ?? '',
-                  digest_sri: updatedDoc.digest_sri ?? '',
-                }
-
-                const existingTrDoc = await trx('ecosystem_document')
-                  .where({
+              if (
+                hasNewTrTables &&
+                Number.isInteger(chainVersionId) &&
+                chainVersionId > 0 &&
+                Number.isInteger(chainGfdId) &&
+                chainGfdId > 0
+              ) {
+                // The chain replaces a document in place, so only its id identifies it.
+                await trx('ecosystem_document')
+                  .insert({
+                    id: chainGfdId,
                     version_id: chainVersionId,
+                    created: updatedDoc.created ?? null,
+                    language: updatedDoc.language ?? '',
                     url: updatedDoc.url ?? '',
+                    digest_sri: updatedDoc.digest_sri ?? '',
                   })
-                  .first()
-
-                if (existingTrDoc && existingTrDoc.id != null) {
-                  await trx('ecosystem_document').where({ id: existingTrDoc.id }).update(trDocBasePayload)
-                } else if (Number.isInteger(chainDocId) && chainDocId > 0) {
-                  await trx('ecosystem_document')
-                    .insert({
-                      id: chainDocId,
-                      ...trDocBasePayload,
-                    })
-                    .onConflict(['version_id', 'url'])
-                    .merge(['created', 'language', 'digest_sri'])
-                }
+                  .onConflict('id')
+                  .merge()
               }
 
               const docChanges: Record<string, any> = {}
