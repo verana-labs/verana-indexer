@@ -12,26 +12,9 @@ import { Corporation } from '../../models/corporation'
 import { Ecosystem } from '../../models/ecosystem'
 import { GovernanceFrameworkVersion } from '../../models/governance_framework_version'
 import { parseCorporationListPagination } from '../crawl-co/co_stats'
+import { buildGfVersionObject, type GfDocumentRow, type GfVersionRow } from './gf_version'
 
-interface GfvDocumentRow {
-  gfd_id?: number | null
-  created: string | Date
-  language: string
-  url: string
-  digest_sri: string
-}
-
-interface GfvRowPlain {
-  corporation_id?: number | null
-  ecosystem_id: number
-  version: number
-  created: string | Date
-  active_since?: string | Date | null
-  gfv_id?: number | null
-  documents?: GfvDocumentRow[]
-}
-
-export function selectGfvDocuments(documents: GfvDocumentRow[], preferredLanguage?: string): GfvDocumentRow[] {
+export function selectGfvDocuments(documents: GfDocumentRow[], preferredLanguage?: string): GfDocumentRow[] {
   if (preferredLanguage) {
     const preferred = documents.find((d) => d.language === preferredLanguage)
     if (preferred) return [preferred]
@@ -40,34 +23,13 @@ export function selectGfvDocuments(documents: GfvDocumentRow[], preferredLanguag
 }
 
 export function buildGfvObject(
-  plain: GfvRowPlain,
+  plain: GfVersionRow,
   source: 'corporation' | 'ecosystem',
   preferredLanguage?: string,
   asOf?: Date
 ): Record<string, unknown> {
-  const chainGfvId = plain.gfv_id ?? null
-  const activeSince = plain.active_since && (!asOf || new Date(plain.active_since) <= asOf) ? plain.active_since : null
   const isCgf = source === 'corporation' && Number(plain.ecosystem_id) === 0
-
-  let documents = (plain.documents ?? []).filter((d) => !asOf || new Date(d.created) <= asOf)
-  documents = selectGfvDocuments(documents, preferredLanguage)
-
-  return {
-    id: chainGfvId,
-    ecosystem_id: isCgf ? null : Number(plain.ecosystem_id),
-    corporation_id: isCgf ? Number(plain.corporation_id) : null,
-    created: plain.created,
-    version: plain.version,
-    active_since: activeSince,
-    documents: documents.map((d) => ({
-      id: d.gfd_id ?? null,
-      gfv_id: chainGfvId,
-      created: d.created,
-      language: d.language,
-      url: d.url,
-      digest_sri: d.digest_sri,
-    })),
-  }
+  return buildGfVersionObject(plain, isCgf, asOf, (documents) => selectGfvDocuments(documents, preferredLanguage))
 }
 
 @Service({
@@ -107,7 +69,7 @@ export default class GovernanceFrameworkApiService extends BaseService {
         return ApiResponder.error(ctx, `GovernanceFrameworkVersion ${idStr} not found`, 404)
       }
 
-      const plain = row.toJSON() as unknown as GfvRowPlain
+      const plain = row.toJSON() as unknown as GfVersionRow
       if (asOf && new Date(plain.created) > asOf) {
         return ApiResponder.error(ctx, `GovernanceFrameworkVersion ${idStr} not found`, 404)
       }
@@ -196,7 +158,7 @@ export default class GovernanceFrameworkApiService extends BaseService {
 
       const source = hasCorp ? 'corporation' : 'ecosystem'
       const versions = rows.map((r) =>
-        buildGfvObject(r.toJSON() as unknown as GfvRowPlain, source, preferredLanguage, asOf)
+        buildGfvObject(r.toJSON() as unknown as GfVersionRow, source, preferredLanguage, asOf)
       )
       return ApiResponder.success(ctx, { versions })
     } catch (err: any) {

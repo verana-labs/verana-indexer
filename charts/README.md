@@ -187,10 +187,9 @@ When you need to re-process all blocks from the beginning (e.g., after schema ch
 ### How it works
 
 1. A **pre-upgrade Helm hook Job** runs `pnpm reindex:prepare`, which:
-   - Drops module tables (transaction, accounts, etc.)
+   - Empties every table that is rebuilt from blocks (transactions, events, module tables) and restarts their ID sequences
    - Resets all service checkpoints to 0
-   - Runs migrations to recreate tables
-   - Resets ID sequences
+   - Leaves the schema unchanged and runs no migrations
    - Preserves the `block` table (blocks are NOT re-fetched from RPC)
 2. The Job connects to the DB via the K8s Service name (not localhost)
 3. After the Job succeeds, the StatefulSet rolls out normally

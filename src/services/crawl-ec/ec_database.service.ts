@@ -28,6 +28,7 @@ import { mapEcosystemApiFields } from '../../common/vpr-v4-mapping'
 import { Ecosystem } from '../../models/ecosystem'
 import { compareById, type GfDataMode, parseCorporationListPagination, parseGfDataMode } from '../crawl-co/co_stats'
 import { resolveCorporationIdByAddress } from '../crawl-co/corporation_resolve'
+import { snapshotGfVersions } from '../crawl-gf/gf_version'
 import { applyActiveParticipantFilter } from '../crawl-pp/pp_state_utils'
 import { enrichTrustDataDeep, parseTrustDataMode } from '../resolver/trust-data-enrichment'
 import {
@@ -1118,7 +1119,7 @@ export default class EcosystemDatabaseService extends BaseService {
           if (!snapshot) {
             return ApiResponder.error(ctx, `Ecosystem with id ${ecosystemId} not found`, 404)
           }
-          let versions = Array.isArray(snapshot.versions_snapshot) ? snapshot.versions_snapshot : []
+          let versions: any[] = snapshotGfVersions(snapshot.versions_snapshot)
           if (activeGfOnly) {
             versions = [...versions]
               .sort((a: any, b: any) => {
@@ -1272,7 +1273,7 @@ export default class EcosystemDatabaseService extends BaseService {
             .orderBy('id', 'desc')
             .first()
           if (snapshot) {
-            let versions = Array.isArray((snapshot as any).versions_snapshot) ? (snapshot as any).versions_snapshot : []
+            let versions: any[] = snapshotGfVersions((snapshot as any).versions_snapshot)
             if (activeGfOnly) {
               versions = [...versions]
                 .sort((a: any, b: any) => {
@@ -1708,7 +1709,7 @@ export default class EcosystemDatabaseService extends BaseService {
           snapshotListQuery.orderBy('ecosystem_id', sortDirection)
           const latestSnapshots = await snapshotListQuery.limit(Math.max(limit * 2, 256))
           const registriesWithStats = (latestSnapshots as any[]).map((row: any) => {
-            let versions = Array.isArray(row.versions_snapshot) ? row.versions_snapshot : []
+            let versions: any[] = snapshotGfVersions(row.versions_snapshot)
             if (activeGfOnly) {
               versions = [...versions]
                 .sort((a: any, b: any) => {

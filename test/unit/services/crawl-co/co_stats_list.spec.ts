@@ -73,6 +73,27 @@ describe('co_stats.parseCorporationListPagination', () => {
 })
 
 describe('co_stats.buildCorporationObject', () => {
+  const cgfRow = {
+    id: 9,
+    corporation_id: 1,
+    ecosystem_id: 0,
+    version: 1,
+    gfv_id: 3,
+    created: '2024-01-01',
+    active_since: '2024-01-01',
+    documents: [
+      {
+        id: 8,
+        gfv_id: 9,
+        gfd_id: 4,
+        created: '2024-01-01',
+        language: 'en',
+        url: 'https://example.com/v1',
+        digest_sri: 'sha384-v1',
+      },
+    ],
+  }
+
   const participantStats = {
     participants: 2,
     participants_ecosystem: 0,
@@ -93,7 +114,7 @@ describe('co_stats.buildCorporationObject', () => {
         created: '2024-01-01',
         modified: '2024-02-01',
       },
-      cgfVersions: [{ version: 1, active_since: '2024-01-01', documents: [{ language: 'en' }] }],
+      cgfVersions: [cgfRow],
       participantStats,
       controlledEcosystems: 2,
       trustDeposit: { ...emptyTrustDepositSnapshot(), deposit: 100, refunded: 9 },
@@ -112,7 +133,24 @@ describe('co_stats.buildCorporationObject', () => {
       refunded: 9,
     })
     expect(obj.versions).toEqual([
-      { version: 1, active_since: '2024-01-01', documents: [{ language: 'en' }], ecosystem_id: null },
+      {
+        id: 3,
+        ecosystem_id: null,
+        corporation_id: 1,
+        created: '2024-01-01',
+        version: 1,
+        active_since: '2024-01-01',
+        documents: [
+          {
+            id: 4,
+            gfv_id: 3,
+            created: '2024-01-01',
+            language: 'en',
+            url: 'https://example.com/v1',
+            digest_sri: 'sha384-v1',
+          },
+        ],
+      },
     ])
   })
 

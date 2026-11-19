@@ -8,31 +8,23 @@ Sometimes your transaction data or module data (Credential Schemas, Ecosystem, P
 
 ## The Basic Idea
 
-Keep the block table, drop everything else, then rebuild from scratch. Blocks are the source of truth, so if they're good, you can derive everything else from them.
+Keep the block data, empty every other table, then rebuild from scratch. Blocks are the source of truth, so if they're good, you can derive everything else from them. The tables themselves are never dropped, so the schema stays exactly as the migrations left it.
 
 ## What Gets Kept
 
-Only the `block` table stays untouched. This is your source of truth from the blockchain, and rebuilding it would take forever. If your blocks are correct, everything else can be rebuilt.
+- `block` and its partitions, and `block_signature`. This is your source of truth from the blockchain, and rebuilding it would take forever.
+- `block_checkpoint` and `checkpoint`. The rows stay, and the script resets them (see below).
+- `knex_migrations` and `knex_migrations_lock`.
 
-## What Gets Dropped
+## What Gets Emptied
 
-### Transaction Tables
-- `transaction`
-- `transaction_message`
+Every other table in the database: transactions, events, and all module tables with their history. The script reads the table list from the database, so a table added by a later migration is covered without a change here.
 
-### Module Tables
-- **Credential Schema**: `credential_schemas` and `credential_schema_history`
-- **Ecosystem**: `ecosystem`, `governance_framework_version`, `governance_framework_document`, plus all their history tables
-- **Participants**: `participants`, `participant_sessions`, and their history tables
-- **Trust Deposits**: `trust_deposits` and `trust_deposit_history`
-- **Module Params**: `module_params` and `module_params_history`
-
-One thing to note about trust deposits: even though they're read directly from block events, we still drop them. They can be fully rebuilt from blocks, and keeping them might cause inconsistencies with other data that's being rebuilt.
+The ID sequences of the emptied tables restart from 1.
 
 ### Checkpoint Tables
-We clear the data from these (don't drop the tables):
-- `block_checkpoint` - delete all rows
-- `checkpoint` - delete all rows
+- `block_checkpoint` - every job goes back to 0, except `crawl:block`, which is set to the highest stored block
+- `checkpoint` - the stored data is cleared
 
 ## How to Run It
 
@@ -62,10 +54,8 @@ pnpm run reindex:start
 
 1. Connects to your database
 2. Verifies the blocks table exists (safety check)
-3. Drops all transaction and module tables
-4. Clears all checkpoint data
-5. Runs migrations to recreate all the tables
-6. Resets all ID sequences to start from 1
+3. Empties every table except the ones listed under "What Gets Kept", and restarts their ID sequences
+4. Resets the checkpoints
 
 After that, you start your services and they'll rebuild everything from block 0.
 
@@ -85,17 +75,17 @@ Create module records
 Trust Deposits also read block events directly
 ```
 
-Trust deposits are a bit special - they read directly from block events stored in the blocks table, not from transactions. But we still drop and rebuild them to keep everything consistent.
+Trust deposits are a bit special - they read directly from block events stored in the blocks table, not from transactions. But we still empty and rebuild them to keep everything consistent.
 
 ## Why We Do It This Way
 
 **Why keep blocks?** They're the original source of truth. Rebuilding them is slow and expensive. If your blocks are correct, you can rebuild everything else.
 
-**Why drop transactions?** Transactions are extracted from blocks. If your blocks are good, you can rebuild transactions. This also ensures your transaction data matches your current processing logic.
+**Why empty transactions?** Transactions are extracted from blocks. If your blocks are good, you can rebuild transactions. This also ensures your transaction data matches your current processing logic.
 
-**Why drop module tables?** Module data comes from transactions (or block events). If you're rebuilding transactions, you need to rebuild modules too. Plus, starting with fresh IDs makes everything cleaner.
+**Why empty module tables?** Module data comes from transactions (or block events). If you're rebuilding transactions, you need to rebuild modules too. Plus, starting with fresh IDs makes everything cleaner.
 
-**Why drop trust deposits even though they read from blocks?** They can be fully rebuilt from block events. Keeping them might cause inconsistencies with other rebuilt data. The service will rebuild them correctly.
+**Why empty trust deposits even though they read from blocks?** They can be fully rebuilt from block events. Keeping them might cause inconsistencies with other rebuilt data. The service will rebuild them correctly.
 
 **Why reset checkpoints?** Checkpoints track where each service stopped. Resetting makes all services start from block 0. If something breaks, services can resume from checkpoints.
 

@@ -365,6 +365,39 @@ describe('buildCorporation', () => {
     })
   })
 
+  it('returns a replaced CGF document once', async () => {
+    tableRows.corporation = [{ id: 43, did: 'did:example:corp3', policy_address: 'verana1p3' }]
+    tableRows.trust_deposits = [{ corporation: 'verana1p3', deposit: 0, slash_count: 0 }]
+    tableRows.co_governance_framework_version = [{ id: 8, version: 2 }]
+    tableRows.co_governance_framework_document = [
+      { id: 11, language: 'es', url: 'https://corp/first', digest_sri: 'sha384-1', created: '2026-11-19T16:54:14Z' },
+      { id: 14, language: 'es', url: 'https://corp/second', digest_sri: 'sha384-2', created: '2026-11-19T16:54:29Z' },
+    ]
+
+    const out = await buildCorporation('did:example:corp3')
+
+    expect((out?.cgf as { documents: unknown[] }).documents).toEqual([
+      { language: 'es', url: 'https://corp/second', digestSri: 'sha384-2' },
+    ])
+  })
+
+  it('returns the CGF document that was live at the requested height', async () => {
+    tableRows.corporation = [{ id: 44, did: 'did:example:corp4', policy_address: 'verana1p4' }]
+    tableRows.trust_deposits = [{ corporation: 'verana1p4', deposit: 0, slash_count: 0 }]
+    tableRows.co_governance_framework_version = [{ id: 9, version: 2 }]
+    tableRows.co_governance_framework_document = [
+      { id: 11, language: 'es', url: 'https://corp/first', digest_sri: 'sha384-1', created: '2026-11-19T16:54:14Z' },
+      { id: 14, language: 'es', url: 'https://corp/second', digest_sri: 'sha384-2', created: '2026-11-19T16:54:29Z' },
+    ]
+    tableRows.block = [{ time: '2026-11-19T16:54:20Z' }]
+
+    const out = await buildCorporation('did:example:corp4', 105)
+
+    expect((out?.cgf as { documents: unknown[] }).documents).toEqual([
+      { language: 'es', url: 'https://corp/first', digestSri: 'sha384-1' },
+    ])
+  })
+
   it('omits slash fields and cgf when absent', async () => {
     tableRows.corporation = [{ id: 5, did: 'did:example:corp2', policy_address: 'verana1p2' }]
     tableRows.trust_deposits = [{ corporation: 'verana1p2', deposit: 0, slash_count: 0 }]

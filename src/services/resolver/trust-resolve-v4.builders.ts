@@ -4,6 +4,7 @@ import { canonicalizeJson, toCoin } from '../../common'
 import { ALL_PARTICIPANT_ROLES, type ParticipantRole, type ParticipantState } from '../../common/types/types'
 import { toIso } from '../../common/utils/date_utils'
 import knex from '../../common/utils/db_connection'
+import { currentGfDocuments } from '../crawl-gf/gf_version'
 import { calculateParticipantState, type ParticipantData } from '../crawl-pp/pp_state_utils'
 import { isEcosystemEcsAllowlisted } from './ecs-allowlist'
 
@@ -300,8 +301,9 @@ async function buildCorporationGovernanceFramework(
 
   const docs = (await knex('co_governance_framework_document')
     .where({ gfv_id: Number(gfv.id) })
-    .orderBy('language', 'asc')) as GfDocRow[]
-  return buildGovernanceFrameworkFrom(gfv, docs)
+    .orderBy('language', 'asc')) as Array<GfDocRow & { id: number; created: string | Date }>
+  const asOf = atHeight != null ? ((await blockTimeAtHeight(atHeight)) ?? undefined) : undefined
+  return buildGovernanceFrameworkFrom(gfv, currentGfDocuments(docs, asOf))
 }
 
 type CorporationRow = { id?: number; policy_address?: string | null; corporation?: string | null }

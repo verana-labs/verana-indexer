@@ -8967,7 +8967,7 @@
             "type": "array",
             "description": "CGF versions (omitted when gf_data=none)",
             "items": {
-              "$ref": "#/components/schemas/CoGovernanceFrameworkVersion"
+              "$ref": "#/components/schemas/GovernanceFrameworkVersionV4"
             }
           }
         },
