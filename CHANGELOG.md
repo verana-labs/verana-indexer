@@ -1,5 +1,14 @@
 # Changelog
 
+## [3.0.1](https://github.com/verana-labs/verana-indexer/compare/v3.0.0...v3.0.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* close the gaps from [#484](https://github.com/verana-labs/verana-indexer/issues/484) (long DIDs, reindex prepare, replaced CGF documents, GF ids) ([#485](https://github.com/verana-labs/verana-indexer/issues/485)) ([13dab0a](https://github.com/verana-labs/verana-indexer/commit/13dab0a611a19dd551dea40fd02082a82e1e9f54))
+* **ec:** keep height sync running on long language tags and replaced EGF documents ([#483](https://github.com/verana-labs/verana-indexer/issues/483)) ([a4d5197](https://github.com/verana-labs/verana-indexer/commit/a4d5197def969733e8575a957d8dbf9c56e17af2))
+* **sync:** close the silent data-loss gaps from [#478](https://github.com/verana-labs/verana-indexer/issues/478) ([#479](https://github.com/verana-labs/verana-indexer/issues/479)) ([995fedf](https://github.com/verana-labs/verana-indexer/commit/995fedf1ca271527d89c4d1afc6f1eaf3e2836a4))
+
 ## [3.0.0](https://github.com/verana-labs/verana-indexer/compare/v2.1.0...v3.0.0) (2026-11-10)
 
 
