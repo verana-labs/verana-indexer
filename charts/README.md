@@ -14,8 +14,7 @@ This Helm chart deploys **Verana Indexer** application with a StatefulSet, suppo
 ## Kubernetes Resources
 
 * **Service:** Exposes a public API TCP port as well as the ones for redis and db (if enabled)
-* **Ingress:**
-  * Public ingress for external access with TLS
+* **Public route:** an Ingress (ingress-nginx) or an HTTPRoute (Gateway API), picked with `ingress.type`
 * **PersistentVolumeClaim:** One for PostgreSQL data (`database.storage.size`, created when `database.enabled`) and one 1Gi volume for Redis (created when `redis.enabled`).
 * **StatefulSet:** Runs Verana Indexer container(s) with configurable replicas.
 
@@ -86,6 +85,12 @@ See [Storage sizing](#storage-sizing) for how to pick `database.storage.size`.
 | Parameter                      | Description                                 | Default       |
 | ------------------------------ | ------------------------------------------- | ------------- |
 | `ingress.public.enableCors`    | Enable CORS for public ingress              | `true`        |
+| `ingress.type`                 | `ingress` for ingress-nginx, `gateway` for an HTTPRoute | `ingress` |
+| `ingress.gateway.name`         | Gateway that accepts the route (type `gateway`) | `""`      |
+| `ingress.gateway.namespace`    | Namespace of the Gateway, when it is another one | `""`     |
+| `ingress.gateway.sectionName`  | HTTPS listener of the Gateway; empty attaches the route to every one | `""`   |
+
+With type `gateway` the Gateway listener terminates TLS and holds the certificate, so `ingress.tlsSecret` and the CORS annotation take no part. Leave `ingress.gateway.sectionName` empty only when the Gateway has a single HTTPS listener: a `parentRef` without it attaches the route to every listener, so a plain HTTP one would serve the app with no redirect.
 
 ### Extra Environment Variables
 
