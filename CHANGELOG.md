@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.1.0](https://github.com/verana-labs/verana-indexer/compare/v3.0.1...v3.1.0) (2026-11-27)
+
+
+### Features
+
+* ML-DSA support with verre 0.4.2 ([#488](https://github.com/verana-labs/verana-indexer/issues/488)) ([ccd2769](https://github.com/verana-labs/verana-indexer/commit/ccd276932169ac4a088e629589d4fb8e376d48c9))
+
 ## [3.0.1](https://github.com/verana-labs/verana-indexer/compare/v3.0.0...v3.0.1) (2026-11-19)
 
 
